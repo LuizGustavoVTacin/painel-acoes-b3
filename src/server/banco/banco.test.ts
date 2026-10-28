@@ -62,8 +62,10 @@ describe('migrações', () => {
     expect(tabelas).toEqual([
       'acoes_selecionadas',
       'catalogo',
+      'cotacoes',
       'estado_api',
       'logos',
+      'pregao',
       'transacoes',
       'uso_api',
     ]);

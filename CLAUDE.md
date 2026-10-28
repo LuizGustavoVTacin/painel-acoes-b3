@@ -74,8 +74,15 @@ Login, sales, historical charts, real-time quotes, hosting.
 - HARD RULE: never use an API that needs a key, account, plan or payment. No
   tokens in code, `.env` or requests. All external calls go through
   `requisitarExterno` (host allowlist; auth headers and key params rejected).
-- Primary: Yahoo Finance (unofficial, no key). Fetch all selected tickers
-  (`BBAS3.SA`) in a single batch request every 5 minutes.
+- Primary: Yahoo Finance `v7/finance/spark` (unofficial; no key, cookie or
+  crumb). Selected tickers (`BBAS3.SA`) go in batches of at most 20 (Yahoo's
+  limit), so 50 stocks = 3 calls. Only header sent: `User-Agent: Mozilla/5.0`
+  (Yahoo answers 429 without it). Each stock refreshes at most every 5 minutes
+  during the trading session and at most once an hour when it is closed
+  (session hours come from Yahoo, so holidays need no calendar).
+- Last known price per stock is kept in `cotacoes`; a stock Yahoo did not
+  refresh uses the brapi list price, and with no source the saved price is
+  shown flagged as outdated.
 - Fallback, catalog and logos: brapi public list `/api/quote/list` (no key),
   one call returns every stock with name, logo URL and last price. Called at
   most once every 15 minutes; each call is counted in `uso_api`.

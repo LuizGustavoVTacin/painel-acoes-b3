@@ -1,12 +1,12 @@
 import type { Centavos } from '../shared/dinheiro.js';
-import { hojeEmBrasilia } from '../shared/datas.js';
 import type { Ticker } from '../shared/ticker.js';
 import type { Banco } from './banco/conexao.js';
 import { emTransacao } from './banco/emTransacao.js';
 import type { RepositorioUsoApi } from './banco/usoApi.js';
 import { buscarListaBrapi } from './externo/brapi.js';
 import { ErroFonte } from './externo/erroFonte.js';
-import type { EstadoFontes, Provedor } from './externo/estadoFontes.js';
+import { contarUso, passou, registrarFalha, semFalhar } from './externo/apoio.js';
+import type { EstadoFontes } from './externo/estadoFontes.js';
 import { MENSAGEM_COBRANCA, requisitarExterno, type Buscar } from './externo/http.js';
 
 /** A brapi guarda a listagem em cache por 15 minutos; chamar antes disso é desperdício. */
@@ -58,16 +58,6 @@ export interface DependenciasCatalogo {
 /** Remove acentos e caixa para comparar buscas: "Itaú" encontra "ITAU". */
 function simplificar(texto: string): string {
   return texto.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
-}
-
-/**
- * Indica se já passou o intervalo desde o instante gravado. Um instante no futuro só existe
- * se o relógio do computador foi atrasado; nesse caso considera que já passou.
- */
-function passou(intervaloMs: number, desde: string | undefined, agora: Date): boolean {
-  if (desde === undefined) return true;
-  const decorrido = agora.getTime() - Date.parse(desde);
-  return !(decorrido >= 0 && decorrido < intervaloMs);
 }
 
 /** Erro de regra do banco (CHECK, UNIQUE...): recusa só a linha e não desfaz a transação. */
@@ -132,32 +122,6 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
   const logosEmAndamento = new Map<Ticker, Promise<void>>();
   const limitarDownloads = criarLimitador(DOWNLOADS_SIMULTANEOS);
 
-  const mesAtual = (momento: Date) => hojeEmBrasilia(momento).slice(0, 7);
-
-  /** Executa uma gravação auxiliar sem nunca lançar: um erro aqui não pode derrubar a rota. */
-  function semFalhar(descricao: string, gravacao: () => void): void {
-    try {
-      gravacao();
-    } catch (erro) {
-      console.error(`Não foi possível ${descricao}:`, erro);
-    }
-  }
-
-  function registrarFalha(provedor: Provedor, erro: unknown, momento: Date): void {
-    const falha =
-      erro instanceof ErroFonte
-        ? erro
-        : new ErroFonte('instavel', 'Erro inesperado ao processar os dados da API');
-    if (!(erro instanceof ErroFonte)) console.error(`Erro inesperado (${provedor}):`, erro);
-    semFalhar(`registrar a falha de ${provedor}`, () =>
-      estado.registrarFalha(provedor, falha, momento),
-    );
-  }
-
-  function contarUso(provedor: Provedor, momento: Date): void {
-    semFalhar(`contar o uso de ${provedor}`, () => uso.registrar(provedor, mesAtual(momento)));
-  }
-
   /**
    * Grava os itens um a um: um item recusado por uma regra do banco não impede os demais.
    * Outros erros (disco cheio, banco travado) desfazem a transação e são lançados.
@@ -186,7 +150,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
     if (!estado.podeChamar('brapi', momento)) return;
 
     ultimaChamadaCatalogo = momento.toISOString();
-    contarUso('brapi', momento);
+    contarUso(uso, 'brapi', momento);
     try {
       const conhecidas = (contarItens.get() as { total: number }).total;
       const { itens, avisoDeCobranca } = await buscarListaBrapi(buscar, momento);
@@ -213,7 +177,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
         estado.registrarSucesso('brapi', momento, aviso),
       );
     } catch (erro) {
-      registrarFalha('brapi', erro, momento);
+      registrarFalha(estado, 'brapi', erro, momento);
     }
   }
 
@@ -233,7 +197,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
       semFalhar(`salvar o logo de ${ticker}`, () => gravarLogo.run(linha));
     };
 
-    contarUso('brapi_icones', momento);
+    contarUso(uso, 'brapi_icones', momento);
     try {
       const resposta = await requisitarExterno(buscar, url, momento, {
         limiteBytes: LIMITE_LOGO_BYTES,
@@ -268,7 +232,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
         // Vários logos seguidos assim indicam mudança no servidor: aí sim, avisa e pausa.
         if (++falhasDeFormatoSeguidas >= FALHAS_DE_FORMATO_PARA_ALERTA) {
           falhasDeFormatoSeguidas = 0;
-          registrarFalha('brapi_icones', erro, momento);
+          registrarFalha(estado, 'brapi_icones', erro, momento);
         }
         return;
       }
@@ -282,7 +246,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
             erro.esperarAte ?? new Date(momento.getTime() + ESPERA_APOS_FALHA_DE_LOGO_MS),
           )
         : erro;
-      registrarFalha('brapi_icones', falha, momento);
+      registrarFalha(estado, 'brapi_icones', falha, momento);
       // Sem logo salvo e falha temporária: nada a gravar, para tentar de novo em breve.
       if (!(temporaria && !salvo)) gravar(manter);
     }

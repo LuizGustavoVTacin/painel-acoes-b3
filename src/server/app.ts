@@ -6,11 +6,13 @@ import { criarRepositorioSelecao } from './banco/selecao.js';
 import { criarRepositorioTransacoes } from './banco/transacoes.js';
 import { criarRepositorioUsoApi } from './banco/usoApi.js';
 import { criarServicoCatalogo } from './catalogo.js';
+import { criarServicoCotacoes } from './cotacoes.js';
 import { ErroHttp } from './erros.js';
 import { criarEstadoFontes } from './externo/estadoFontes.js';
 import type { Buscar } from './externo/http.js';
 import {
   criarRotasCatalogo,
+  criarRotasCotacoes,
   criarRotasFontes,
   criarRotasLogos,
   criarRotasPosicoes,
@@ -72,16 +74,13 @@ export function criarApp({
   agora = () => new Date(),
 }: OpcoesApp): Express {
   const estado = criarEstadoFontes(banco);
+  const uso = criarRepositorioUsoApi(banco);
+  const catalogo = criarServicoCatalogo({ banco, buscar, agora, estado, uso });
   const dependencias = {
     transacoes: criarRepositorioTransacoes(banco),
     selecao: criarRepositorioSelecao(banco),
-    catalogo: criarServicoCatalogo({
-      banco,
-      buscar,
-      agora,
-      estado,
-      uso: criarRepositorioUsoApi(banco),
-    }),
+    catalogo,
+    cotacoes: criarServicoCotacoes({ banco, buscar, agora, estado, uso, catalogo }),
     estado,
     agora,
   };
@@ -101,6 +100,7 @@ export function criarApp({
   app.use('/api/catalogo', criarRotasCatalogo(dependencias));
   app.use('/api/logos', criarRotasLogos(dependencias));
   app.use('/api/fontes', criarRotasFontes(dependencias));
+  app.use('/api/cotacoes', criarRotasCotacoes(dependencias));
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ erro: 'Rota não encontrada' });

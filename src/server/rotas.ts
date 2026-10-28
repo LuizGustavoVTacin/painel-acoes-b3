@@ -6,6 +6,7 @@ import { LIMITE_ACOES_SELECIONADAS } from './banco/migracoes.js';
 import type { RepositorioSelecao } from './banco/selecao.js';
 import type { RepositorioTransacoes } from './banco/transacoes.js';
 import type { ServicoCatalogo } from './catalogo.js';
+import type { ServicoCotacoes } from './cotacoes.js';
 import type { EstadoFontes } from './externo/estadoFontes.js';
 import { ErroNaoEncontrado, ErroValidacao } from './erros.js';
 import { lerId, validarDadosTransacao, validarSelecao } from './validacao.js';
@@ -14,6 +15,7 @@ export interface DependenciasRotas {
   transacoes: RepositorioTransacoes;
   selecao: RepositorioSelecao;
   catalogo: ServicoCatalogo;
+  cotacoes: ServicoCotacoes;
   estado: EstadoFontes;
   agora: () => Date;
 }
@@ -60,6 +62,20 @@ export function criarRotasLogos({ catalogo }: DependenciasRotas): Router {
 }
 
 /** Situação de cada API externa, para o rodapé e os alertas da tela. */
+/**
+ * Cotações das ações selecionadas, com a fonte de cada uma e o estado das APIs.
+ * Nunca falha por causa das APIs: no pior caso devolve o último preço salvo.
+ */
+export function criarRotasCotacoes({ selecao, cotacoes, estado }: DependenciasRotas): Router {
+  const rotas = Router();
+  rotas.get('/', async (_req, res) => {
+    const tickers = selecao.listar();
+    await cotacoes.atualizar(tickers);
+    res.json({ ...cotacoes.listar(tickers), fontes: estado.listar() });
+  });
+  return rotas;
+}
+
 export function criarRotasFontes({ estado }: DependenciasRotas): Router {
   const rotas = Router();
   rotas.get('/', (_req, res) => {

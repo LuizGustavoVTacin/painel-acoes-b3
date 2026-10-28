@@ -11,6 +11,7 @@ export type Buscar = typeof fetch;
 const PARAMETROS_POR_HOST: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ['brapi.dev', new Set(['type', 'limit'])],
   ['icons.brapi.dev', new Set<string>()],
+  ['query1.finance.yahoo.com', new Set(['symbols', 'range', 'interval'])],
 ]);
 export const HOSTS_PERMITIDOS: ReadonlySet<string> = new Set(PARAMETROS_POR_HOST.keys());
 

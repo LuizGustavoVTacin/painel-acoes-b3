@@ -76,6 +76,24 @@ const MIGRACOES: readonly string[] = [
     proxima_tentativa TEXT
   ) STRICT;
   `,
+  `
+  -- Último preço conhecido de cada ação, para nunca ficar sem dado se uma API falhar.
+  CREATE TABLE cotacoes (
+    ticker TEXT PRIMARY KEY CHECK ${TICKER_VALIDO},
+    preco_centavos INTEGER NOT NULL CHECK (preco_centavos > 0),
+    fonte TEXT NOT NULL CHECK (fonte IN ('yahoo', 'brapi')),
+    negociado_em TEXT,
+    atualizado_em TEXT NOT NULL
+  ) STRICT;
+
+  -- Horário do pregão regular mais recente informado pelo Yahoo (uma única linha).
+  CREATE TABLE pregao (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    inicio TEXT NOT NULL,
+    fim TEXT NOT NULL,
+    CHECK (inicio < fim)
+  ) STRICT;
+  `,
 ];
 
 export const VERSAO_ATUAL = MIGRACOES.length;
