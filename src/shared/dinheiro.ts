@@ -59,15 +59,22 @@ export function textoParaCentavos(texto: string): Centavos {
 }
 
 /** Insere pontos de milhar numa sequência de dígitos: "1234567" → "1.234.567". */
-export function agruparMilhares(digitos: string): string {
+function agruparMilhares(digitos: string): string {
   return digitos.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+/**
+ * Formata o módulo de um inteiro em centésimos com duas casas no padrão brasileiro,
+ * sem sinal e sem ponto flutuante: 123456 → "1.234,56"; -5 → "0,05".
+ */
+export function formatarCentesimos(centesimos: number): string {
+  const digitos = String(Math.abs(centesimos)).padStart(3, '0');
+  return `${agruparMilhares(digitos.slice(0, -2))},${digitos.slice(-2)}`;
 }
 
 /** Formata centavos em reais: 123456 → "R$ 1.234,56"; -5 → "-R$ 0,05". */
 export function formatarBRL(centavos: Centavos): string {
   garantirCentavos(centavos);
-  const digitos = String(Math.abs(centavos)).padStart(3, '0');
-  const reais = agruparMilhares(digitos.slice(0, -2));
   const sinal = centavos < 0 ? '-' : '';
-  return `${sinal}R$ ${reais},${digitos.slice(-2)}`;
+  return `${sinal}R$ ${formatarCentesimos(centavos)}`;
 }

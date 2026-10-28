@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  agruparMilhares,
+  formatarCentesimos,
   formatarBRL,
   garantirCentavos,
   reaisParaCentavos,
@@ -102,14 +102,16 @@ describe('textoParaCentavos', () => {
   });
 });
 
-describe('agruparMilhares', () => {
+describe('formatarCentesimos', () => {
   it.each([
-    ['0', '0'],
-    ['999', '999'],
-    ['1000', '1.000'],
-    ['1234567', '1.234.567'],
-  ])('"%s" → "%s"', (digitos, esperado) => {
-    expect(agruparMilhares(digitos)).toBe(esperado);
+    [0, '0,00'],
+    [5, '0,05'],
+    [99999, '999,99'],
+    [100000, '1.000,00'],
+    [123456789, '1.234.567,89'],
+    [-123456, '1.234,56'],
+  ])('%s → "%s"', (centesimos, esperado) => {
+    expect(formatarCentesimos(centesimos)).toBe(esperado);
   });
 });
 

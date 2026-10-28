@@ -1,5 +1,5 @@
 import {
-  agruparMilhares,
+  formatarCentesimos,
   garantirCentavos,
   garantirInteiroSeguro,
   type Centavos,
@@ -98,10 +98,7 @@ export function calcularVariacao(precoAtual: Centavos, posicao: Posicao): Variac
 
 /** Formata centésimos de ponto percentual: 1234 → "+12,34%", -567 → "-5,67%", 0 → "0,00%". */
 export function formatarPercentual(centesimos: number): string {
-  if (!Number.isSafeInteger(centesimos)) {
-    throw new RangeError(`Percentual deve ser inteiro em centésimos (recebido: ${centesimos})`);
-  }
-  const digitos = String(Math.abs(centesimos)).padStart(3, '0');
+  garantirInteiroSeguro(centesimos, 'percentual', 'número de centésimos');
   const sinal = centesimos > 0 ? '+' : centesimos < 0 ? '-' : '';
-  return `${sinal}${agruparMilhares(digitos.slice(0, -2))},${digitos.slice(-2)}%`;
+  return `${sinal}${formatarCentesimos(centesimos)}%`;
 }
