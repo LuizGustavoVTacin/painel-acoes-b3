@@ -34,4 +34,10 @@ describe('pastaClienteCompilado', () => {
   it('não serve frontend quando roda a partir de src/server (desenvolvimento)', () => {
     expect(pastaClienteCompilado(urlDe('src', 'server', 'index.ts'))).toBeUndefined();
   });
+
+  it('ignora pastas "dist" acima do projeto', () => {
+    const url = pathToFileURL(path.resolve('dist', 'projeto', 'src', 'server', 'index.ts')).href;
+
+    expect(pastaClienteCompilado(url)).toBeUndefined();
+  });
 });

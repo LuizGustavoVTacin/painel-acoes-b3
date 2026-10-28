@@ -43,6 +43,16 @@ describe('erros de requisição', () => {
     expect(resposta.status).toBe(400);
     expect(resposta.body).toEqual({ erro: 'Requisição inválida' });
   });
+
+  it('responde 413 com mensagem própria quando o corpo é grande demais', async () => {
+    const resposta = await request(criarApp())
+      .post('/api/saude')
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ texto: 'x'.repeat(200 * 1024) }));
+
+    expect(resposta.status).toBe(413);
+    expect(resposta.body).toEqual({ erro: 'Requisição muito grande' });
+  });
 });
 
 describe('acesso somente local', () => {

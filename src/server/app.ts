@@ -23,10 +23,14 @@ const somenteHostLocal: RequestHandler = (req, res, next) => {
   res.status(403).json({ erro: 'Acesso permitido apenas pelo próprio computador' });
 };
 
-const tratarErro: ErrorRequestHandler = (erro, _req, res, _next) => {
+const tratarErro: ErrorRequestHandler = (erro, _req, res, next) => {
+  // Resposta já começou a ser enviada: só o Express consegue encerrar a conexão.
+  if (res.headersSent) return next(erro);
+
   const status: number = erro?.status;
   if (Number.isInteger(status) && status >= 400 && status < 500) {
-    res.status(status).json({ erro: 'Requisição inválida' });
+    const mensagem = status === 413 ? 'Requisição muito grande' : 'Requisição inválida';
+    res.status(status).json({ erro: mensagem });
     return;
   }
   console.error(erro);

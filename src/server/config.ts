@@ -15,7 +15,8 @@ export function lerPorta(valor: string | undefined): number {
  * (produção). Em desenvolvimento quem serve o frontend é o Vite.
  */
 export function pastaClienteCompilado(urlDoModulo: string): string | undefined {
-  const arquivo = fileURLToPath(urlDoModulo);
-  const emDist = arquivo.split(path.sep).includes('dist');
+  // Só o avô do módulo importa (dist/server/index.js); pastas "dist" acima do projeto não contam.
+  const pastaAvo = path.dirname(path.dirname(fileURLToPath(urlDoModulo)));
+  const emDist = path.basename(pastaAvo) === 'dist';
   return emDist ? fileURLToPath(new URL('../client', urlDoModulo)) : undefined;
 }

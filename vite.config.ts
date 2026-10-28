@@ -1,11 +1,12 @@
 import react from '@vitejs/plugin-react';
 import { loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
+import { lerPorta } from './src/server/config';
 
 export default defineConfig(({ mode }) => {
   // O Vite não carrega o .env em process.env; lemos a mesma PORT usada pelo Express.
   const env = loadEnv(mode, process.cwd(), '');
-  const portaApi = env.PORT?.trim() || '3000';
+  const portaApi = lerPorta(env.PORT);
 
   return {
     plugins: [react()],
