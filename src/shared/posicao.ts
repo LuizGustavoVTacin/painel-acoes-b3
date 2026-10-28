@@ -1,4 +1,9 @@
-import { agruparMilhares, garantirCentavos, type Centavos } from './dinheiro.js';
+import {
+  agruparMilhares,
+  garantirCentavos,
+  garantirInteiroSeguro,
+  type Centavos,
+} from './dinheiro.js';
 
 /** Uma compra registrada, com valores em centavos. */
 export interface Compra {
@@ -60,7 +65,7 @@ export function calcularPosicao(compras: readonly Compra[]): Posicao | null {
   }
 
   return {
-    quantidadeTotal: garantirCentavos(Number(quantidadeTotal), 'quantidadeTotal'),
+    quantidadeTotal: garantirInteiroSeguro(Number(quantidadeTotal), 'quantidadeTotal'),
     custoTotal: garantirCentavos(Number(custoTotal), 'custoTotal'),
     precoMedio: Number(dividirArredondando(custoTotal, quantidadeTotal)),
   };
@@ -74,13 +79,20 @@ export function calcularVariacao(precoAtual: Centavos, posicao: Posicao): Variac
   if (garantirCentavos(precoAtual, 'precoAtual') < 0) {
     throw new RangeError(`Preço atual não pode ser negativo (recebido: ${precoAtual})`);
   }
+  if (
+    garantirInteiroSeguro(posicao.quantidadeTotal, 'quantidadeTotal') <= 0 ||
+    garantirCentavos(posicao.custoTotal, 'custoTotal') <= 0
+  ) {
+    throw new RangeError('Posição inválida: quantidade e custo total devem ser maiores que zero');
+  }
   const custoTotal = BigInt(posicao.custoTotal);
   const diferenca = BigInt(precoAtual) * BigInt(posicao.quantidadeTotal) - custoTotal;
   const direcao: Direcao = diferenca > 0n ? 'alta' : diferenca < 0n ? 'baixa' : 'neutra';
+  const centesimos = Number(dividirArredondando(diferenca * 10_000n, custoTotal));
 
   return {
     direcao,
-    centesimosDePercentual: Number(dividirArredondando(diferenca * 10_000n, custoTotal)),
+    centesimosDePercentual: garantirInteiroSeguro(centesimos, 'centesimosDePercentual'),
   };
 }
 

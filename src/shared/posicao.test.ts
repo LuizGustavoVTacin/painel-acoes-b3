@@ -140,6 +140,18 @@ describe('calcularVariacao', () => {
   it.each([-1, 10.5, NaN])('recusa preço atual %s', (precoAtual) => {
     expect(() => calcularVariacao(precoAtual, posicao(2000, 1))).toThrow(RangeError);
   });
+
+  it.each([
+    ['custo zero', { custoTotal: 0, quantidadeTotal: 1, precoMedio: 0 }],
+    ['quantidade zero', { custoTotal: 1000, quantidadeTotal: 0, precoMedio: 0 }],
+    ['custo fracionado', { custoTotal: 10.5, quantidadeTotal: 1, precoMedio: 11 }],
+  ])('recusa posição com %s', (_caso, invalida) => {
+    expect(() => calcularVariacao(1000, invalida)).toThrow(RangeError);
+  });
+
+  it('recusa percentuais grandes demais para um inteiro seguro', () => {
+    expect(() => calcularVariacao(Number.MAX_SAFE_INTEGER, posicao(1, 1))).toThrow(RangeError);
+  });
 });
 
 describe('formatarPercentual', () => {

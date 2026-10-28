@@ -45,9 +45,16 @@ describe('reaisParaCentavos', () => {
     expect(Object.is(reaisParaCentavos(-0.001), 0)).toBe(true);
   });
 
-  it.each([NaN, Infinity, -Infinity, 1e20])('recusa %s', (reais) => {
-    expect(() => reaisParaCentavos(reais)).toThrow(RangeError);
+  it('aceita valores logo abaixo do limite sem perder centavos', () => {
+    expect(reaisParaCentavos(9999999999999.99)).toBe(999999999999999);
   });
+
+  it.each([NaN, Infinity, -Infinity, 1e20, 1e13, 12345678901234.56, -1e13])(
+    'recusa %s',
+    (reais) => {
+      expect(() => reaisParaCentavos(reais)).toThrow(RangeError);
+    },
+  );
 });
 
 describe('textoParaCentavos', () => {
@@ -86,6 +93,10 @@ describe('textoParaCentavos', () => {
     '10R$',
     'R$',
     '99999999999999999,99',
+    '00,5',
+    '000.000',
+    '01',
+    '0.500,00',
   ])('recusa "%s"', (texto) => {
     expect(() => textoParaCentavos(texto)).toThrow(RangeError);
   });

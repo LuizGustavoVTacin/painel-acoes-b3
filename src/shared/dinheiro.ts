@@ -1,13 +1,24 @@
 /** Valor monetário em centavos de real. Sempre um inteiro seguro, nunca fração. */
 export type Centavos = number;
 
-/** Garante que o valor é um inteiro seguro em centavos; lança RangeError se não for. */
-export function garantirCentavos(valor: number, nome = 'valor'): Centavos {
+/** Garante que o valor é um inteiro seguro; lança RangeError se não for. */
+export function garantirInteiroSeguro(valor: number, nome: string, unidade = 'número'): number {
   if (!Number.isSafeInteger(valor)) {
-    throw new RangeError(`${nome} deve ser um número inteiro de centavos (recebido: ${valor})`);
+    throw new RangeError(`${nome} deve ser um ${unidade} inteiro (recebido: ${valor})`);
   }
   return valor;
 }
+
+/** Garante que o valor é um inteiro seguro em centavos; lança RangeError se não for. */
+export function garantirCentavos(valor: number, nome = 'valor'): Centavos {
+  return garantirInteiroSeguro(valor, nome, 'número de centavos');
+}
+
+/**
+ * Maior valor aceito por reaisParaCentavos. Acima de 15 algarismos significativos o
+ * ponto flutuante já não representa os centavos com segurança.
+ */
+export const LIMITE_REAIS = 1e13;
 
 /** Arredonda para o inteiro mais próximo; empates (x,5) se afastam do zero. */
 function arredondarMeioParaFora(valor: number): number {
@@ -21,15 +32,16 @@ function arredondarMeioParaFora(valor: number): number {
  * 100.49999999999999 em ponto flutuante, mas deve virar 101 centavos.
  */
 export function reaisParaCentavos(reais: number): Centavos {
-  if (!Number.isFinite(reais)) {
+  if (!Number.isFinite(reais) || Math.abs(reais) >= LIMITE_REAIS) {
     throw new RangeError(`Valor em reais inválido: ${reais}`);
   }
   const centavos = Number((reais * 100).toPrecision(15));
   return garantirCentavos(arredondarMeioParaFora(centavos));
 }
 
-// Parte inteira com separador de milhar (1.234.567) ou sem (1234567); até 2 casas após a vírgula.
-const PADRAO_VALOR_BR = /^(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?$/;
+// Parte inteira com separador de milhar (1.234.567), sem (1234567) ou só "0", sem zeros à
+// esquerda; até 2 casas após a vírgula.
+const PADRAO_VALOR_BR = /^([1-9]\d{0,2}(?:\.\d{3})+|[1-9]\d*|0)(?:,(\d{1,2}))?$/;
 
 /**
  * Lê um valor digitado no formato brasileiro ("1.234,56", "R$ 10", "0,5") e devolve

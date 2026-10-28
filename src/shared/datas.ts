@@ -46,13 +46,32 @@ const formatoHorario = new Intl.DateTimeFormat('pt-BR', {
   hourCycle: 'h23',
 });
 
+// Instante ISO completo com fuso explícito (Z ou ±hh:mm); sem fuso o resultado dependeria da máquina.
+const PADRAO_INSTANTE =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+function instanteValido(instante: Date | number | string): Date | null {
+  if (typeof instante === 'string') {
+    const partes = PADRAO_INSTANTE.exec(instante);
+    if (!partes) return null;
+    const [ano, mes, dia, hora, minuto, segundo = 0] = partes.slice(1).map((p) => Number(p ?? 0));
+    if (!dataExiste(ano, mes, dia) || hora > 23 || minuto > 59 || segundo > 59) return null;
+  } else if (!(instante instanceof Date) && typeof instante !== 'number') {
+    return null;
+  }
+  const data = new Date(instante);
+  const ano = data.getUTCFullYear();
+  return ano >= ANO_MINIMO && ano <= ANO_MAXIMO ? data : null;
+}
+
 /**
  * Formata um instante no horário de Brasília: "27/10/2026 14:35".
+ * Aceita Date, milissegundos ou texto ISO com fuso ("2026-10-27T17:35:00Z").
  * Montado a partir das partes para não depender da pontuação de cada navegador.
  */
-export function formatarHorario(instante: Date | string | number): string {
-  const data = new Date(instante);
-  if (Number.isNaN(data.getTime())) {
+export function formatarHorario(instante: Date | number | string): string {
+  const data = instanteValido(instante);
+  if (!data) {
     throw new RangeError(`Horário inválido: "${String(instante)}"`);
   }
   const partes = Object.fromEntries(

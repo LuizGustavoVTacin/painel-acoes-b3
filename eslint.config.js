@@ -24,5 +24,22 @@ export default tseslint.config(
     files: ['src/server/**/*.ts', '*.{js,ts}'],
     languageOptions: { globals: globals.node },
   },
+  {
+    // O build do servidor compila src/ para dist/; importar o cliente misturaria com a saída do Vite.
+    files: ['src/server/**/*.ts', 'src/shared/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/client', '**/client/**'],
+              message: 'Servidor e shared não podem importar código do cliente.',
+            },
+          ],
+        },
+      ],
+    },
+  },
   prettier,
 );

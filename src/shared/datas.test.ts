@@ -81,7 +81,28 @@ describe('formatarHorario', () => {
     expect(formatarHorario(new Date(instante))).toBe('05/01/2026 09:07');
   });
 
-  it.each(['', 'ontem', NaN])('recusa %j', (instante) => {
+  it('aceita fuso com deslocamento e frações de segundo', () => {
+    expect(formatarHorario('2026-10-27T14:35:00-03:00')).toBe('27/10/2026 14:35');
+    expect(formatarHorario('2026-10-27T17:35:59.999Z')).toBe('27/10/2026 14:35');
+    expect(formatarHorario('2026-10-27T17:35Z')).toBe('27/10/2026 14:35');
+  });
+
+  it.each([
+    ['vazio', ''],
+    ['texto', 'ontem'],
+    ['NaN', NaN],
+    ['data sem horário (seria lida como meia-noite UTC)', '2026-10-27'],
+    ['horário sem fuso (dependeria da máquina)', '2026-10-27T12:00'],
+    ['data inexistente', '2026-02-30T00:00Z'],
+    ['hora inexistente', '2026-10-27T24:00Z'],
+    ['minuto inexistente', '2026-10-27T10:60Z'],
+    ['ano fora do intervalo', -8.64e15],
+    ['ano anterior a 1900', '1850-01-01T00:00Z'],
+  ])('recusa %s', (_caso, instante) => {
     expect(() => formatarHorario(instante)).toThrow(RangeError);
+  });
+
+  it.each([null, true, undefined, {}])('recusa o tipo inválido %j', (instante) => {
+    expect(() => formatarHorario(instante as unknown as string)).toThrow(RangeError);
   });
 });
