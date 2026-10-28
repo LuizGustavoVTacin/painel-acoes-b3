@@ -303,12 +303,13 @@ describe('logos', () => {
     expect(requisicoes.map((r) => r.url)).toEqual([URL_LISTA_BRAPI, URL_LOGO]);
   });
 
-  it('ação fora do catálogo não recarrega a lista a cada pedido de logo', async () => {
+  it('ação fora do catálogo não recarrega a lista a cada pedido de logo (nem após 15 min)', async () => {
     const { catalogo, requisicoes } = await comCatalogo(svg());
 
     expect(await catalogo.logo('XXXX3')).toBeNull();
+    avancar(HORA);
     expect(await catalogo.logo('XXXX3')).toBeNull();
-    expect(requisicoes).toHaveLength(1); // só a lista, dentro do limite de 15 minutos
+    expect(requisicoes).toHaveLength(1); // só a primeira lista, mesmo uma hora depois
   });
 
   it('ação sem endereço de logo no catálogo não gera requisição', async () => {

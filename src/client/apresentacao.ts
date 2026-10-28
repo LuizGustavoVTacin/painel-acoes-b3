@@ -68,15 +68,19 @@ function substituto(provedor: Provedor, fontesEmUso: readonly FonteCotacao[]): s
   return 'Usando os últimos dados salvos.';
 }
 
-function proximaVerificacao(proximaTentativa: string | null): string {
-  return proximaTentativa && ehInstanteISO(proximaTentativa)
-    ? `Nova verificação em ${formatarHorario(proximaTentativa)}.`
-    : 'Nova verificação em até 24 h.';
+function proximaVerificacao(proximaTentativa: string | null, agora: Date): string {
+  if (!proximaTentativa || !ehInstanteISO(proximaTentativa)) return 'Nova verificação em até 24 h.';
+  // A espera acabou, mas a API só é chamada de novo quando for necessária (ex.: Yahoo fora).
+  if (Date.parse(proximaTentativa) <= agora.getTime()) {
+    return 'Será verificada de novo quando for necessária.';
+  }
+  return `Nova verificação em ${formatarHorario(proximaTentativa)}.`;
 }
 
 function avisoDaFonte(
   { provedor, situacao, mensagem, proximaTentativa }: EstadoFonte,
   fontesEmUso: readonly FonteCotacao[],
+  agora: Date,
 ): Aviso | null {
   const nome = NOME_PROVEDOR[provedor];
   switch (situacao) {
@@ -91,20 +95,19 @@ function avisoDaFonte(
     case 'formato_alterado':
       return {
         nivel: 'erro',
-        texto: `${nome}: ${MOTIVO_DA_PARADA[situacao]} e o app parou de chamá-lo. ${substituto(provedor, fontesEmUso)} ${proximaVerificacao(proximaTentativa)}`,
+        texto: `${nome}: ${MOTIVO_DA_PARADA[situacao]} e o app parou de chamá-lo. ${substituto(provedor, fontesEmUso)} ${proximaVerificacao(proximaTentativa, agora)}`,
       };
   }
 }
 
 /** Avisos do rodapé: situação de cada API e ações que o Yahoo não conhece. */
-export function avisosDoRodape({
-  fontes,
-  fontesEmUso,
-  semCotacaoNoYahoo,
-}: RespostaCotacoes): Aviso[] {
+export function avisosDoRodape(
+  { fontes, fontesEmUso, semCotacaoNoYahoo }: RespostaCotacoes,
+  agora = new Date(),
+): Aviso[] {
   const avisos = [...fontes]
     .sort((a, b) => ORDEM_PROVEDORES.indexOf(a.provedor) - ORDEM_PROVEDORES.indexOf(b.provedor))
-    .map((fonte) => avisoDaFonte(fonte, fontesEmUso))
+    .map((fonte) => avisoDaFonte(fonte, fontesEmUso, agora))
     .filter((aviso): aviso is Aviso => aviso !== null);
   if (semCotacaoNoYahoo.length > 0) {
     avisos.push({

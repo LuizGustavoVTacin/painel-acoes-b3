@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatarBRL } from '../shared/dinheiro';
 import type { Cotacao } from '../shared/painel';
 
@@ -11,8 +11,20 @@ interface PropsQuadrado {
 /** Um quadrado da grade: logo, código e preço atual. */
 export function QuadradoAcao({ cotacao, rodada }: PropsQuadrado) {
   const { ticker, precoCentavos, desatualizada } = cotacao;
-  const [falhouNaRodada, setFalhouNaRodada] = useState<number | null>(null);
-  const semLogo = falhouNaRodada === rodada;
+  const [semLogo, setSemLogo] = useState(false);
+  const endereco = `/api/logos/${ticker}`;
+
+  // Sem logo, as iniciais ficam na tela e o logo é testado por fora a cada atualização;
+  // só troca se carregar, para o quadrado não piscar.
+  useEffect(() => {
+    if (!semLogo) return;
+    const teste = new Image();
+    teste.onload = () => setSemLogo(false);
+    teste.src = endereco;
+    return () => {
+      teste.onload = null;
+    };
+  }, [semLogo, rodada, endereco]);
 
   return (
     <li className={desatualizada ? 'quadrado quadrado-desatualizado' : 'quadrado'}>
@@ -23,12 +35,12 @@ export function QuadradoAcao({ cotacao, rodada }: PropsQuadrado) {
       ) : (
         <img
           className="logo"
-          src={`/api/logos/${ticker}`}
+          src={endereco}
           alt=""
           width={48}
           height={48}
           loading="lazy"
-          onError={() => setFalhouNaRodada(rodada)}
+          onError={() => setSemLogo(true)}
         />
       )}
       <span className="ticker">{ticker}</span>

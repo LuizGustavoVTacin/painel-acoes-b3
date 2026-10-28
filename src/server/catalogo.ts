@@ -291,15 +291,16 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
 
     /** Logo salvo no banco; baixa na primeira vez e confere no máximo uma vez por dia. */
     async logo(ticker: Ticker): Promise<Logo | null> {
+      // Com o Yahoo funcionando, ninguém mais carrega o catálogo: o logo precisa dele.
+      // Só quando está vazio: uma ação fora da lista não faz chamá-la a cada 15 minutos.
+      if ((contarItens.get() as { total: number }).total === 0) await garantirAtualizado();
+
       const momento = agora();
       const salvo = buscarLogo.get(ticker) as LinhaLogo | undefined;
       const vencido = [salvo?.verificado_em, logosConferidosEm.get(ticker)].every((t) =>
         passou(VALIDADE_LOGO_MS, t, momento),
       );
-      const lerUrl = () => buscarLogoUrl.get(ticker) as { logo_url: string | null } | undefined;
-      // Com o Yahoo funcionando, ninguém mais carrega o catálogo: o logo precisa dele.
-      if (!lerUrl()) await garantirAtualizado();
-      const url = lerUrl()?.logo_url;
+      const url = (buscarLogoUrl.get(ticker) as { logo_url: string | null } | undefined)?.logo_url;
 
       if (vencido && url && podeChamar(estado, 'brapi_icones', momento)) {
         let conferencia = logosEmAndamento.get(ticker);

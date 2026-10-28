@@ -237,14 +237,33 @@ describe('App', () => {
     expect(fetchFalso).toHaveBeenCalledTimes(1);
   });
 
-  it('logo que falhou é tentado de novo na atualização seguinte', async () => {
+  it('logo que falhou é testado por fora a cada atualização, sem piscar', async () => {
+    // O jsdom não carrega imagens: cada teste de logo fica registrado e é concluído à mão.
+    const testes: { src: string; onload: (() => void) | null }[] = [];
+    vi.stubGlobal(
+      'Image',
+      class {
+        src = '';
+        onload: (() => void) | null = null;
+        constructor() {
+          testes.push(this);
+        }
+      },
+    );
     simularServidor(resposta());
     render(<App />);
     await avancar();
     fireEvent.error(quadrados()[0].querySelector('img')!);
-    expect(quadrados()[0].querySelector('img')).toBeNull();
+    expect(testes).toHaveLength(1); // o teste começa logo após a falha
+    expect(testes[0].src).toBe('/api/logos/BBAS3');
 
+    // Nova atualização: outro teste, e as iniciais continuam enquanto ele não carrega.
     await avancar(INTERVALO_ATUALIZACAO_MS);
+    expect(testes).toHaveLength(2);
+    expect(quadrados()[0].querySelector('img')).toBeNull();
+    expect(quadrados()[0]).toHaveTextContent('BB');
+
+    await act(async () => testes[1].onload?.());
 
     expect(quadrados()[0].querySelector('img')).toHaveAttribute('src', '/api/logos/BBAS3');
   });

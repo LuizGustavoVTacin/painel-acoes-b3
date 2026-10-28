@@ -110,8 +110,23 @@ describe('avisosDoRodape', () => {
       ...fonte('yahoo', 'bloqueada'),
       proximaTentativa: '2026-10-28T20:44:12.000Z',
     };
-    const [aviso] = avisosDoRodape(resposta({ fontes: [bloqueada] }));
+    const [aviso] = avisosDoRodape(
+      resposta({ fontes: [bloqueada] }),
+      new Date('2026-10-28T10:00:00Z'),
+    );
     expect(aviso.texto.endsWith('Nova verificação em 28/10/2026 17:44.')).toBe(true);
+  });
+
+  it('espera já vencida (API ainda não chamada de novo) não mostra horário no passado', () => {
+    const bloqueada = {
+      ...fonte('brapi', 'bloqueada'),
+      proximaTentativa: '2026-10-28T20:44:12.000Z',
+    };
+    const [aviso] = avisosDoRodape(
+      resposta({ fontes: [bloqueada] }),
+      new Date('2026-10-29T10:00:00Z'),
+    );
+    expect(aviso.texto.endsWith('Será verificada de novo quando for necessária.')).toBe(true);
   });
 
   it('API funcionando com aviso (ex.: menção a cobrança) aparece como atenção', () => {
