@@ -53,6 +53,12 @@ export interface Aviso {
   texto: string;
 }
 
+/** Por que o app deixou de chamar a API por 24 h. */
+const MOTIVO_DA_PARADA = {
+  bloqueada: 'passou a exigir pagamento ou chave',
+  formato_alterado: 'mudou o formato dos dados',
+} as const;
+
 /** O que a tela mostra enquanto a API está fora. */
 function substituto(provedor: Provedor, fontesEmUso: readonly FonteCotacao[]): string {
   if (provedor === 'brapi_icones') return 'Os logos já salvos continuam aparecendo.';
@@ -82,14 +88,10 @@ function avisoDaFonte(
         texto: `${nome}: indisponível no momento. ${substituto(provedor, fontesEmUso)}`,
       };
     case 'bloqueada':
-      return {
-        nivel: 'erro',
-        texto: `${nome}: passou a exigir pagamento ou chave e o app parou de chamá-lo. ${substituto(provedor, fontesEmUso)} ${proximaVerificacao(proximaTentativa)}`,
-      };
     case 'formato_alterado':
       return {
         nivel: 'erro',
-        texto: `${nome}: mudou o formato dos dados e o app parou de chamá-lo. ${substituto(provedor, fontesEmUso)} ${proximaVerificacao(proximaTentativa)}`,
+        texto: `${nome}: ${MOTIVO_DA_PARADA[situacao]} e o app parou de chamá-lo. ${substituto(provedor, fontesEmUso)} ${proximaVerificacao(proximaTentativa)}`,
       };
   }
 }
