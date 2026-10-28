@@ -2,7 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 
-function simularFetch(implementacao: () => Promise<Response>) {
+function simularFetch(implementacao: (url: string, opcoes?: RequestInit) => Promise<Response>) {
   const fetchFalso = vi.fn(implementacao);
   vi.stubGlobal('fetch', fetchFalso);
   return fetchFalso;
@@ -44,15 +44,14 @@ describe('App', () => {
   });
 
   it('mostra indisponível quando o servidor não responde dentro do tempo limite', async () => {
-    const fetchFalso = vi.fn(
-      (_url: string, opcoes?: RequestInit) =>
-        new Promise<Response>((_resolver, rejeitar) => {
+    simularFetch(
+      (_url, opcoes) =>
+        new Promise((_resolver, rejeitar) => {
           opcoes?.signal?.addEventListener('abort', () =>
             rejeitar(new DOMException('Abortado', 'AbortError')),
           );
         }),
     );
-    vi.stubGlobal('fetch', fetchFalso);
     render(<App tempoLimiteMs={20} />);
 
     expect(await screen.findByText('Servidor indisponível')).toBeInTheDocument();
