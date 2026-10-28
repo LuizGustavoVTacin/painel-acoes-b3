@@ -61,7 +61,8 @@ Login, sales, historical charts, real-time quotes, hosting.
 
 - Node.js + TypeScript everywhere. Frontend: React + Vite. Backend: Express
   (holds API keys in `.env`, caches quotes, serves the built frontend).
-- Database: SQLite file `dados.db` via `better-sqlite3` (no server to install).
+- Database: SQLite file `dados.db` via the built-in `node:sqlite` (Node 24; no
+  native dependency, nothing to install). Path configurable with `DB_ARQUIVO`.
   Stores transactions, the stock selection and monthly API usage.
 - Tests: Vitest + Testing Library; API tests with supertest. Lint: ESLint + Prettier.
 - Commands (created in step 1): `npm run dev`, `npm test`, `npm run lint`,

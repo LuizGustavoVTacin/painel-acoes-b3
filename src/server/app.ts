@@ -1,10 +1,18 @@
 import express, { type ErrorRequestHandler, type Express, type RequestHandler } from 'express';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import type { Banco } from './banco/conexao.js';
+import { criarRepositorioSelecao } from './banco/selecao.js';
+import { criarRepositorioTransacoes } from './banco/transacoes.js';
+import { ErroHttp } from './erros.js';
+import { criarRotasPosicoes, criarRotasSelecao, criarRotasTransacoes } from './rotas.js';
 
 export interface OpcoesApp {
+  banco: Banco;
   /** Pasta com o frontend compilado. Só é servida se contiver um index.html. */
   pastaCliente?: string;
+  /** Relógio usado nas validações de data (substituível nos testes). */
+  agora?: () => Date;
 }
 
 const HOSTS_LOCAIS = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -27,6 +35,13 @@ const tratarErro: ErrorRequestHandler = (erro, _req, res, next) => {
   // Resposta já começou a ser enviada: só o Express consegue encerrar a conexão.
   if (res.headersSent) return next(erro);
 
+  if (erro instanceof ErroHttp) {
+    res
+      .status(erro.status)
+      .json({ erro: erro.message, ...(erro.campos && { campos: erro.campos }) });
+    return;
+  }
+
   const status: number = erro?.status;
   if (Number.isInteger(status) && status >= 400 && status < 500) {
     const mensagem = status === 413 ? 'Requisição muito grande' : 'Requisição inválida';
@@ -37,7 +52,13 @@ const tratarErro: ErrorRequestHandler = (erro, _req, res, next) => {
   res.status(500).json({ erro: 'Erro interno do servidor' });
 };
 
-export function criarApp({ pastaCliente }: OpcoesApp = {}): Express {
+export function criarApp({ banco, pastaCliente, agora = () => new Date() }: OpcoesApp): Express {
+  const dependencias = {
+    transacoes: criarRepositorioTransacoes(banco),
+    selecao: criarRepositorioSelecao(banco),
+    agora,
+  };
+
   const app = express();
   app.disable('x-powered-by');
   app.use(somenteHostLocal);
@@ -46,6 +67,10 @@ export function criarApp({ pastaCliente }: OpcoesApp = {}): Express {
   app.get('/api/saude', (_req, res) => {
     res.json({ status: 'ok', horario: new Date().toISOString() });
   });
+
+  app.use('/api/transacoes', criarRotasTransacoes(dependencias));
+  app.use('/api/selecao', criarRotasSelecao(dependencias));
+  app.use('/api/posicoes', criarRotasPosicoes(dependencias));
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ erro: 'Rota não encontrada' });

@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { formatarData, formatarHorario, lerDataBR } from './datas.js';
+import { ehDataISO, formatarData, formatarHorario, hojeEmBrasilia, lerDataBR } from './datas.js';
+
+describe('ehDataISO', () => {
+  it('aceita datas existentes e recusa as demais', () => {
+    expect(ehDataISO('2024-02-29')).toBe(true);
+    expect(ehDataISO('2026-02-29')).toBe(false);
+    expect(ehDataISO('27/10/2026')).toBe(false);
+  });
+});
+
+describe('hojeEmBrasilia', () => {
+  it('usa o calendário de Brasília', () => {
+    expect(hojeEmBrasilia(new Date('2026-10-27T17:00:00Z'))).toBe('2026-10-27');
+    // 01:30 UTC do dia 28 ainda é dia 27 em Brasília.
+    expect(hojeEmBrasilia(new Date('2026-10-28T01:30:00Z'))).toBe('2026-10-27');
+    expect(hojeEmBrasilia(new Date('2026-10-28T03:00:00Z'))).toBe('2026-10-28');
+  });
+});
 
 describe('formatarData', () => {
   it.each([

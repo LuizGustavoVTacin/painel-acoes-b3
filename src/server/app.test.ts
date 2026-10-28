@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { criarApp, nomeDoHost } from './app.js';
+import { criarApp as criarAppReal, nomeDoHost, type OpcoesApp } from './app.js';
+import { abrirBanco } from './banco/conexao.js';
+
+const criarApp = (opcoes: Partial<OpcoesApp> = {}) =>
+  criarAppReal({ banco: abrirBanco(':memory:'), ...opcoes });
 
 describe('GET /api/saude', () => {
   it('responde 200 com status ok e o horário atual em ISO', async () => {

@@ -18,12 +18,11 @@ const doisDigitos = (n: number) => String(n).padStart(2, '0');
 
 /** Converte "2026-10-27" em "27/10/2026". Lança RangeError se a data for inválida. */
 export function formatarData(data: DataISO): string {
-  const partes = PADRAO_ISO.exec(data);
-  const [ano, mes, dia] = partes ? partes.slice(1).map(Number) : [];
-  if (!partes || !dataExiste(ano, mes, dia)) {
+  if (!ehDataISO(data)) {
     throw new RangeError(`Data inválida: "${data}"`);
   }
-  return `${doisDigitos(dia)}/${doisDigitos(mes)}/${ano}`;
+  const [ano, mes, dia] = data.split('-');
+  return `${dia}/${mes}/${ano}`;
 }
 
 /** Lê uma data digitada como "27/10/2026" (ou "1/2/2026") e devolve "2026-10-27". */
@@ -74,8 +73,26 @@ export function formatarHorario(instante: Date | number | string): string {
   if (!data) {
     throw new RangeError(`Horário inválido: "${String(instante)}"`);
   }
-  const partes = Object.fromEntries(
+  const partes = partesEmBrasilia(data);
+  return `${partes.day}/${partes.month}/${partes.year} ${partes.hour}:${partes.minute}`;
+}
+
+/** Data de hoje no calendário de Brasília, como "2026-10-27". */
+export function hojeEmBrasilia(agora: Date = new Date()): DataISO {
+  const partes = partesEmBrasilia(agora);
+  return `${partes.year}-${partes.month}-${partes.day}`;
+}
+
+function partesEmBrasilia(data: Date): Partial<Record<Intl.DateTimeFormatPartTypes, string>> {
+  return Object.fromEntries(
     formatoHorario.formatToParts(data).map(({ type, value }) => [type, value]),
   );
-  return `${partes.day}/${partes.month}/${partes.year} ${partes.hour}:${partes.minute}`;
+}
+
+/** Indica se o texto é uma data ISO "AAAA-MM-DD" que existe no calendário. */
+export function ehDataISO(texto: string): boolean {
+  const partes = PADRAO_ISO.exec(texto);
+  if (!partes) return false;
+  const [ano, mes, dia] = partes.slice(1).map(Number);
+  return dataExiste(ano, mes, dia);
 }
