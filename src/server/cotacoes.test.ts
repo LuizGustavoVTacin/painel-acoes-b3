@@ -185,6 +185,28 @@ describe('reserva pela brapi e falhas', () => {
     expect(estado.consultar('yahoo')?.situacao).toBe('ok');
   });
 
+  it('lote só com ação que o Yahoo não conhece (404) não bloqueia o Yahoo', async () => {
+    const naoEncontrada = json(
+      { spark: { result: null, error: { code: 'Not Found', description: 'No data found' } } },
+      { status: 404 },
+    );
+    const { cotacoes, estado, doYahoo } = montar({
+      [URL_YAHOO]: [naoEncontrada, spark(itemSpark('BBAS3'))],
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+
+    const painel = await atualizarEListar(cotacoes, ['ELET3']);
+    expect(painel.cotacoes.map((c) => [c.ticker, c.fonte])).toEqual([['ELET3', 'brapi']]);
+    expect(painel.semCotacaoNoYahoo).toEqual(['ELET3']);
+    expect(estado.consultar('yahoo')?.situacao).toBe('ok');
+
+    // Uma ação nova logo em seguida continua indo ao Yahoo.
+    avancar(60 * 1000);
+    const depois = await atualizarEListar(cotacoes, ['ELET3', 'BBAS3']);
+    expect(depois.cotacoes.find((c) => c.ticker === 'BBAS3')?.fonte).toBe('yahoo');
+    expect(doYahoo()).toHaveLength(2);
+  });
+
   it('Yahoo pedindo pagamento: usa só a brapi e não chama o Yahoo por 24 h', async () => {
     const { cotacoes, estado, doYahoo } = montar({
       [URL_YAHOO]: json({ message: 'subscription required' }, { status: 402 }),

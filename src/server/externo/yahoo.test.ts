@@ -151,6 +151,38 @@ describe('buscarLoteYahoo', () => {
     expect(cabecalhos.has('authorization')).toBe(false);
   });
 
+  it('lote só com ações que o Yahoo não conhece (404 "Not Found") não é falha da API', async () => {
+    // Resposta real do spark para symbols=XXXX3.SA (conferida em 28/10/2026).
+    const corpo = {
+      spark: {
+        result: null,
+        error: { code: 'Not Found', description: 'No data found for spark symbols' },
+      },
+    };
+    const { buscar } = criarFetchFalso({ [URL_YAHOO]: json(corpo, { status: 404 }) });
+
+    await expect(buscarLoteYahoo(buscar, ['ELET3', 'XXXX3'], AGORA)).resolves.toEqual([]);
+  });
+
+  it.each([
+    ['página HTML', new Response('<html>Not Found</html>', { status: 404 })],
+    ['JSON de outro erro', json({ finance: { error: { code: 'Not Found' } } }, { status: 404 })],
+  ])('outro 404 (%s) continua sendo formato alterado', async (_caso, resposta) => {
+    const { buscar } = criarFetchFalso({ [URL_YAHOO]: resposta });
+
+    expect((await falha(buscarLoteYahoo(buscar, ['BBAS3'], AGORA))).situacao).toBe(
+      'formato_alterado',
+    );
+  });
+
+  it('404 pedindo pagamento continua sendo bloqueio', async () => {
+    const { buscar } = criarFetchFalso({
+      [URL_YAHOO]: new Response('Subscription required: upgrade your plan', { status: 404 }),
+    });
+
+    expect((await falha(buscarLoteYahoo(buscar, ['BBAS3'], AGORA))).situacao).toBe('bloqueada');
+  });
+
   it('lote grande demais (400 do Yahoo) é formato alterado', async () => {
     const corpo = {
       spark: {

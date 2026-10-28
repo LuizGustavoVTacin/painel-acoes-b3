@@ -2,7 +2,7 @@ import { reaisParaCentavos, type Centavos } from '../../shared/dinheiro.js';
 import { normalizarTicker, type Ticker } from '../../shared/ticker.js';
 import type { Pregao } from '../pregao.js';
 import { ErroFonte } from './erroFonte.js';
-import { requisitarExterno, type Buscar } from './http.js';
+import { classificarFalha, requisitarExterno, type Buscar } from './http.js';
 
 /**
  * Endpoint "spark" do Yahoo Finance: cotações de várias ações numa chamada, sem chave, conta,
@@ -138,15 +138,31 @@ export async function buscarLoteYahoo(
   tickers: readonly Ticker[],
   agora: Date,
 ): Promise<CotacaoYahoo[]> {
-  const { corpo } = await requisitarExterno(buscar, urlDoLote(tickers), agora, {
+  const { status, cabecalhos, corpo } = await requisitarExterno(buscar, urlDoLote(tickers), agora, {
     limiteBytes: LIMITE_RESPOSTA_BYTES,
     cabecalhos: CABECALHOS_YAHOO,
+    // Lote só com ações que o Yahoo não conhece (ex.: código antigo) responde 404.
+    statusAceitos: [404],
   });
+  const texto = new TextDecoder().decode(corpo);
   let json: unknown;
   try {
-    json = JSON.parse(new TextDecoder().decode(corpo));
+    json = JSON.parse(texto);
   } catch {
+    if (status === 404) throw classificarFalha(status, cabecalhos, texto, agora);
     throw formatoAlterado('resposta não é JSON');
   }
+  if (status === 404) {
+    if (nenhumaAcaoEncontrada(json)) return [];
+    // Outro 404 (ex.: o endereço deixou de existir) segue a classificação de sempre.
+    throw classificarFalha(status, cabecalhos, texto, agora);
+  }
   return interpretarSpark(json, tickers);
+}
+
+/** Resposta do spark quando nenhuma das ações pedidas existe: não é falha da API. */
+function nenhumaAcaoEncontrada(json: unknown): boolean {
+  const spark = (json as { spark?: { result?: unknown; error?: { code?: unknown } } } | null)
+    ?.spark;
+  return spark?.result === null && spark.error?.code === 'Not Found';
 }
