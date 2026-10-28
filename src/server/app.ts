@@ -7,7 +7,7 @@ import { criarRepositorioTransacoes } from './banco/transacoes.js';
 import { criarRepositorioUsoApi } from './banco/usoApi.js';
 import { criarServicoCatalogo } from './catalogo.js';
 import { criarServicoCotacoes } from './cotacoes.js';
-import { ErroHttp } from './erros.js';
+import { ErroHttp, ErroValidacao } from './erros.js';
 import { criarEstadoFontes } from './externo/estadoFontes.js';
 import type { Buscar } from './externo/http.js';
 import {
@@ -45,6 +45,20 @@ const somenteHostLocal: RequestHandler = (req, res, next) => {
   if (HOSTS_LOCAIS.has(nomeDoHost(req.headers.host ?? ''))) return next();
   res.status(403).json({ erro: 'Acesso permitido apenas pelo próprio computador' });
 };
+
+const utf8Estrito = new TextDecoder('utf-8', { fatal: true });
+
+/**
+ * Recusa corpo que não é UTF-8 válido (ex.: texto em Latin-1 vindo de um terminal do Windows).
+ * Sem isso, cada acento inválido viraria "�" e ficaria gravado assim no banco.
+ */
+function exigirUtf8(_req: unknown, _res: unknown, corpo: Buffer): void {
+  try {
+    utf8Estrito.decode(corpo);
+  } catch {
+    throw new ErroValidacao('O texto enviado não está em UTF-8; os acentos chegariam corrompidos');
+  }
+}
 
 const tratarErro: ErrorRequestHandler = (erro, _req, res, next) => {
   // Resposta já começou a ser enviada: só o Express consegue encerrar a conexão.
@@ -88,7 +102,7 @@ export function criarApp({
   const app = express();
   app.disable('x-powered-by');
   app.use(somenteHostLocal);
-  app.use(express.json());
+  app.use(express.json({ verify: exigirUtf8 }));
 
   app.get('/api/saude', (_req, res) => {
     res.json({ status: 'ok', horario: new Date().toISOString() });

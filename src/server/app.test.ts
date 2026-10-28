@@ -38,6 +38,14 @@ describe('rotas inexistentes', () => {
   });
 });
 
+/** Envia os bytes exatamente como estão (o supertest transformaria um Buffer em JSON). */
+const enviarBytes = (rota: string, bytes: Buffer) =>
+  request(criarApp())
+    .post(rota)
+    .type('application/json')
+    .serialize((corpo: unknown) => corpo as string)
+    .send(bytes as unknown as string);
+
 describe('erros de requisição', () => {
   it('responde 400 em JSON quando o corpo JSON é malformado', async () => {
     const resposta = await request(criarApp())
@@ -47,6 +55,29 @@ describe('erros de requisição', () => {
 
     expect(resposta.status).toBe(400);
     expect(resposta.body).toEqual({ erro: 'Requisição inválida' });
+  });
+
+  it('recusa corpo que não é UTF-8 válido em vez de corromper os acentos', async () => {
+    // "Itaú" em Latin-1 (como alguns terminais do Windows enviam): o byte 0xFA sozinho
+    // não é UTF-8 e viraria o caractere de substituição "�" no banco.
+    const latin1 = Buffer.from('{"plataforma":"Itaú"}', 'latin1');
+    const resposta = await enviarBytes('/api/transacoes', latin1);
+
+    expect(resposta.status).toBe(400);
+    expect(resposta.body).toEqual({
+      erro: 'O texto enviado não está em UTF-8; os acentos chegariam corrompidos',
+    });
+  });
+
+  it('aceita acentos em UTF-8', async () => {
+    const resposta = await enviarBytes(
+      '/api/transacoes',
+      Buffer.from('{"plataforma":"Itaú Íon"}', 'utf8'),
+    );
+
+    // Chega ao validador da compra (que reclama dos outros campos), não ao de codificação.
+    expect(resposta.status).toBe(400);
+    expect(resposta.body.campos).not.toHaveProperty('plataforma');
   });
 
   it('responde 413 com mensagem própria quando o corpo é grande demais', async () => {
