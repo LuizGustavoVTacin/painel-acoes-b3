@@ -1,5 +1,5 @@
 import type { Centavos } from '../shared/dinheiro.js';
-import { filtrarAcoes, type AcaoCatalogo } from '../shared/selecao.js';
+import { filtrarAcoes, type AcaoListada } from '../shared/selecao.js';
 import type { Ticker } from '../shared/ticker.js';
 import type { Banco } from './banco/conexao.js';
 import { emTransacao } from './banco/emTransacao.js';
@@ -22,6 +22,10 @@ const LIMITE_LOGO_BYTES = 200 * 1024;
 const TIPOS_DE_LOGO = new Set(['image/svg+xml', 'image/png']);
 /** Uma lista com menos da metade das ações já conhecidas indica corte ou mudança na API. */
 const FRACAO_MINIMA_DA_LISTA = 0.5;
+const listaEncolheu = (gravados: number, conhecidas: number) =>
+  gravados < conhecidas * FRACAO_MINIMA_DA_LISTA;
+/** Ações vistas na última lista completa (ou todas, se ainda não houve uma). */
+const SOMENTE_LISTADAS = `atualizado_em >= coalesce((SELECT completa_em FROM catalogo_lista), '')`;
 const FALHAS_DE_FORMATO_PARA_ALERTA = 5;
 const AVISO_FALHA_LOCAL = 'A brapi respondeu, mas o banco local não salvou os dados';
 const AVISO_DE_COBRANCA = `${MENSAGEM_COBRANCA} (aviso recebido junto com os dados)`;
@@ -78,18 +82,32 @@ export type ServicoCatalogo = ReturnType<typeof criarServicoCatalogo>;
 
 /**
  * Catálogo de ações, preços de reserva e logos vindos da brapi, guardados no banco.
- * Ações que saem da listagem continuam no catálogo (com o último preço e logo conhecidos):
- * apagar dependeria de a brapi nunca devolver uma lista incompleta.
+ * Ações que saem da listagem continuam no banco (com o último preço e logo conhecidos), mas
+ * deixam de ser listadas depois de uma lista de tamanho normal sem elas. Uma lista que encolheu
+ * demais (falha da brapi) não esconde nada.
  */
 export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: DependenciasCatalogo) {
   const gravarItem = banco.prepare(
-    `INSERT INTO catalogo (ticker, nome, logo_url, preco_centavos, atualizado_em)
-     VALUES (:ticker, :nome, :logoUrl, :precoCentavos, :agora)
+    `INSERT INTO catalogo
+       (ticker, nome, logo_url, preco_centavos, setor, variacao_centesimos, atualizado_em)
+     VALUES (:ticker, :nome, :logoUrl, :precoCentavos, :setor, :variacaoDoDia, :agora)
      ON CONFLICT (ticker) DO UPDATE SET nome = excluded.nome, logo_url = excluded.logo_url,
-       preco_centavos = excluded.preco_centavos, atualizado_em = excluded.atualizado_em`,
+       preco_centavos = excluded.preco_centavos, setor = excluded.setor,
+       variacao_centesimos = excluded.variacao_centesimos, atualizado_em = excluded.atualizado_em`,
+  );
+  const marcarListaCompleta = banco.prepare(
+    `INSERT INTO catalogo_lista (id, completa_em) VALUES (1, ?)
+     ON CONFLICT (id) DO UPDATE SET completa_em = excluded.completa_em`,
   );
   const contarItens = banco.prepare('SELECT count(*) AS total FROM catalogo');
-  const listarItens = banco.prepare('SELECT ticker, nome FROM catalogo ORDER BY ticker');
+  const contarListadas = banco.prepare(
+    `SELECT count(*) AS total FROM catalogo WHERE ${SOMENTE_LISTADAS}`,
+  );
+  const listarItens = banco.prepare(
+    `SELECT ticker, nome, setor, variacao_centesimos AS variacaoDoDia FROM catalogo
+     WHERE ${SOMENTE_LISTADAS} ORDER BY ticker`,
+  );
+  const buscarUltimaLista = banco.prepare('SELECT max(atualizado_em) AS momento FROM catalogo');
   const buscarPreco = banco.prepare(
     'SELECT preco_centavos, atualizado_em FROM catalogo WHERE ticker = ? AND preco_centavos IS NOT NULL',
   );
@@ -116,8 +134,9 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
   /**
    * Grava os itens um a um: um item recusado por uma regra do banco não impede os demais.
    * Outros erros (disco cheio, banco travado) desfazem a transação e são lançados.
+   * Uma lista de tamanho normal passa a valer como a lista atual da B3.
    */
-  function salvarItens(itens: { ticker: Ticker }[], momento: Date): number {
+  function salvarItens(itens: { ticker: Ticker }[], momento: Date, conhecidas: number): number {
     let gravados = 0;
     emTransacao(banco, () => {
       for (const item of itens) {
@@ -129,6 +148,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
           console.warn(`Ação ${item.ticker} ignorada no catálogo:`, (erro as Error).message);
         }
       }
+      if (!listaEncolheu(gravados, conhecidas)) marcarListaCompleta.run(momento.toISOString());
     });
     return gravados;
   }
@@ -143,11 +163,11 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
     ultimaChamadaCatalogo = momento.toISOString();
     contarUso(uso, 'brapi', momento);
     try {
-      const conhecidas = (contarItens.get() as { total: number }).total;
+      const conhecidas = (contarListadas.get() as { total: number }).total;
       const { itens, avisoDeCobranca } = await buscarListaBrapi(buscar, momento);
       let gravados: number;
       try {
-        gravados = salvarItens(itens, momento);
+        gravados = salvarItens(itens, momento, conhecidas);
       } catch (erro) {
         // Problema do banco local, não da API: a brapi respondeu bem.
         console.error('Não foi possível salvar o catálogo no banco:', erro);
@@ -159,7 +179,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
 
       const aviso = avisoDeCobranca
         ? AVISO_DE_COBRANCA
-        : gravados < conhecidas * FRACAO_MINIMA_DA_LISTA
+        : listaEncolheu(gravados, conhecidas)
           ? `A brapi devolveu menos ações que o normal (${gravados} de ${conhecidas})`
           : gravados < itens.length
             ? `${itens.length - gravados} ações da brapi foram ignoradas por dados inválidos`
@@ -254,8 +274,14 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
   return {
     garantirAtualizado,
 
-    listar(busca = ''): AcaoCatalogo[] {
-      return filtrarAcoes(listarItens.all() as unknown as AcaoCatalogo[], busca);
+    /** Ações da lista atual da B3 (sem as que saíram da bolsa), filtradas pela busca. */
+    listar(busca = ''): AcaoListada[] {
+      return filtrarAcoes(listarItens.all() as unknown as AcaoListada[], busca);
+    },
+
+    /** Quando a lista da brapi foi salva pela última vez; null se nunca foi. */
+    atualizadoEm(): string | null {
+      return (buscarUltimaLista.get() as { momento: string | null }).momento;
     },
 
     /** Último preço da brapi para cada ticker que tiver preço no catálogo. */

@@ -27,16 +27,23 @@ function arredondarMeioParaFora(valor: number): number {
 }
 
 /**
- * Converte reais (ex.: preço vindo de uma API) em centavos.
- * toPrecision(15) remove o ruído binário antes de arredondar: 1.005 * 100 vale
- * 100.49999999999999 em ponto flutuante, mas deve virar 101 centavos.
+ * Converte um número com casas decimais (reais, percentual) no inteiro de centésimos mais
+ * próximo. toPrecision(15) remove o ruído binário antes de arredondar: 1.005 * 100 vale
+ * 100.49999999999999 em ponto flutuante, mas deve virar 101.
  */
+export function paraCentesimos(valor: number): number {
+  if (!Number.isFinite(valor) || Math.abs(valor) >= LIMITE_REAIS) {
+    throw new RangeError(`Valor inválido: ${valor}`);
+  }
+  return arredondarMeioParaFora(Number((valor * 100).toPrecision(15)));
+}
+
+/** Converte reais (ex.: preço vindo de uma API) em centavos. */
 export function reaisParaCentavos(reais: number): Centavos {
   if (!Number.isFinite(reais) || Math.abs(reais) >= LIMITE_REAIS) {
     throw new RangeError(`Valor em reais inválido: ${reais}`);
   }
-  const centavos = Number((reais * 100).toPrecision(15));
-  return garantirCentavos(arredondarMeioParaFora(centavos));
+  return garantirCentavos(paraCentesimos(reais));
 }
 
 // Parte inteira com separador de milhar (1.234.567), sem (1234567) ou só "0", sem zeros à

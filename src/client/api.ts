@@ -6,7 +6,7 @@ import type {
   RespostaCotacoes,
   SituacaoFonte,
 } from '../shared/painel';
-import type { AcaoCatalogo } from '../shared/selecao';
+import type { AcaoListada } from '../shared/selecao';
 import { ehInstanteISO } from '../shared/datas';
 import { normalizarTicker, type Ticker } from '../shared/ticker';
 import {
@@ -211,17 +211,34 @@ export async function buscarCotacoes(signal: AbortSignal): Promise<RespostaCotac
   return lerRespostaCotacoes(await pedirJson('/api/cotacoes', { signal }));
 }
 
-function lerAcaoCatalogo(valor: unknown): AcaoCatalogo | null {
+/** A lista de ações da B3 e quando a brapi a enviou (null se nunca). */
+export interface Catalogo {
+  acoes: AcaoListada[];
+  atualizadoEm: string | null;
+}
+
+function lerAcaoCatalogo(valor: unknown): AcaoListada | null {
   if (!ehObjeto(valor) || !ehTicker(valor.ticker) || typeof valor.nome !== 'string') {
     return descartar('catálogo', valor);
   }
-  return { ticker: valor.ticker, nome: valor.nome };
+  // Setor e variação são extras: se vierem estranhos, a ação aparece sem eles.
+  return {
+    ticker: valor.ticker,
+    nome: valor.nome,
+    setor: typeof valor.setor === 'string' && valor.setor !== '' ? valor.setor : null,
+    variacaoDoDia: Number.isSafeInteger(valor.variacaoDoDia)
+      ? (valor.variacaoDoDia as number)
+      : null,
+  };
 }
 
 /** Confere o corpo de GET /api/catalogo; uma ação inválida é descartada sozinha. */
-export function lerCatalogo(corpo: unknown): AcaoCatalogo[] {
+export function lerCatalogo(corpo: unknown): Catalogo {
   if (!ehObjeto(corpo) || !Array.isArray(corpo.acoes)) throw formatoInvalido();
-  return corpo.acoes.map(lerAcaoCatalogo).filter(presente);
+  return {
+    acoes: corpo.acoes.map(lerAcaoCatalogo).filter(presente),
+    atualizadoEm: ehInstante(corpo.atualizadoEm) ? corpo.atualizadoEm : null,
+  };
 }
 
 /**
@@ -235,8 +252,8 @@ export function lerSelecao(corpo: unknown): Ticker[] {
   return corpo.tickers;
 }
 
-/** Todas as ações que podem ser escolhidas, com o nome da empresa. */
-export async function buscarCatalogo(signal: AbortSignal): Promise<AcaoCatalogo[]> {
+/** Todas as ações que podem ser escolhidas, com nome, setor e variação do dia. */
+export async function buscarCatalogo(signal: AbortSignal): Promise<Catalogo> {
   return lerCatalogo(await pedirJson('/api/catalogo', { signal }));
 }
 

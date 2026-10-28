@@ -157,7 +157,32 @@ describe('lerCatalogo', () => {
     const corpo = {
       acoes: [{ ticker: 'BBAS3', nome: 'Banco do Brasil', logo: '/api/logos/BBAS3' }],
     };
-    expect(lerCatalogo(corpo)).toEqual([{ ticker: 'BBAS3', nome: 'Banco do Brasil' }]);
+    expect(lerCatalogo(corpo)).toEqual({
+      acoes: [{ ticker: 'BBAS3', nome: 'Banco do Brasil', setor: null, variacaoDoDia: null }],
+      atualizadoEm: null,
+    });
+  });
+
+  it('lê setor, variação do dia e o horário da lista', () => {
+    const corpo = {
+      acoes: [{ ticker: 'BBAS3', nome: 'Banco do Brasil', setor: 'Finance', variacaoDoDia: -668 }],
+      atualizadoEm: '2026-10-28T17:35:00.000Z',
+    };
+    expect(lerCatalogo(corpo)).toEqual({
+      acoes: [{ ticker: 'BBAS3', nome: 'Banco do Brasil', setor: 'Finance', variacaoDoDia: -668 }],
+      atualizadoEm: '2026-10-28T17:35:00.000Z',
+    });
+  });
+
+  it('setor, variação ou horário estranhos viram vazios, sem descartar a ação', () => {
+    const corpo = {
+      acoes: [{ ticker: 'BBAS3', nome: 'BB', setor: 42, variacaoDoDia: 1.5 }],
+      atualizadoEm: 'ontem',
+    };
+    expect(lerCatalogo(corpo)).toEqual({
+      acoes: [{ ticker: 'BBAS3', nome: 'BB', setor: null, variacaoDoDia: null }],
+      atualizadoEm: null,
+    });
   });
 
   it.each([
@@ -177,7 +202,7 @@ describe('lerCatalogo', () => {
         { ticker: 'PETR4', nome: 'Petrobras' },
       ],
     };
-    expect(lerCatalogo(corpo)).toEqual([{ ticker: 'PETR4', nome: 'Petrobras' }]);
+    expect(lerCatalogo(corpo).acoes.map((a) => a.ticker)).toEqual(['PETR4']);
   });
 });
 
@@ -204,9 +229,10 @@ describe('catálogo e seleção no servidor', () => {
     );
     vi.stubGlobal('fetch', fetchFalso);
 
-    await expect(buscarCatalogo(sinal())).resolves.toEqual([
-      { ticker: 'BBAS3', nome: 'Banco do Brasil' },
-    ]);
+    await expect(buscarCatalogo(sinal())).resolves.toEqual({
+      acoes: [{ ticker: 'BBAS3', nome: 'Banco do Brasil', setor: null, variacaoDoDia: null }],
+      atualizadoEm: null,
+    });
     expect(fetchFalso).toHaveBeenCalledWith('/api/catalogo', expect.anything());
   });
 

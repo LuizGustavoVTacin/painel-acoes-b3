@@ -1,4 +1,4 @@
-import { reaisParaCentavos, type Centavos } from '../../shared/dinheiro.js';
+import { paraCentesimos, reaisParaCentavos, type Centavos } from '../../shared/dinheiro.js';
 import { normalizarTicker, type Ticker } from '../../shared/ticker.js';
 import { ErroFonte } from './erroFonte.js';
 import {
@@ -17,6 +17,9 @@ export const URL_LISTA_BRAPI = 'https://brapi.dev/api/quote/list?type=stock&limi
 const HOST_LOGOS = 'icons.brapi.dev';
 const LIMITE_LISTA_BYTES = 5 * 1024 * 1024;
 const TAMANHO_MAXIMO_NOME = 200;
+const TAMANHO_MAXIMO_SETOR = 60;
+/** Variação diária acima disto (em %) é tratada como dado inválido. */
+const VARIACAO_MAXIMA_PERCENTUAL = 1000;
 
 export interface ItemCatalogo {
   ticker: Ticker;
@@ -24,6 +27,10 @@ export interface ItemCatalogo {
   logoUrl: string | null;
   /** Último preço informado pela brapi; null se ausente ou inválido. */
   precoCentavos: Centavos | null;
+  /** Setor em inglês, como a brapi publica; null se ausente. */
+  setor: string | null;
+  /** Variação do dia em centésimos de ponto percentual; null se ausente ou inválida. */
+  variacaoDoDia: number | null;
 }
 
 const formatoAlterado = (detalhe: string) =>
@@ -49,6 +56,18 @@ function lerPreco(valor: unknown): Centavos | null {
   }
 }
 
+function lerSetor(valor: unknown): string | null {
+  if (typeof valor !== 'string') return null;
+  const setor = valor.trim();
+  return setor && setor.length <= TAMANHO_MAXIMO_SETOR ? setor : null;
+}
+
+/** A brapi informa a variação em % (ex.: -6.68); guarda em centésimos inteiros (-668). */
+function lerVariacao(valor: unknown): number | null {
+  if (typeof valor !== 'number' || !(Math.abs(valor) <= VARIACAO_MAXIMA_PERCENTUAL)) return null;
+  return paraCentesimos(valor);
+}
+
 /**
  * Valida a resposta da listagem. Itens malformados e do mercado fracionário são descartados;
  * se nada for reconhecido, o formato da API mudou.
@@ -70,6 +89,8 @@ export function interpretarListaBrapi(json: unknown): ItemCatalogo[] {
       nome: nome.slice(0, TAMANHO_MAXIMO_NOME),
       logoUrl: lerLogo(acao.logo),
       precoCentavos: lerPreco(acao.close),
+      setor: lerSetor(acao.sector),
+      variacaoDoDia: lerVariacao(acao.change),
     });
   }
 

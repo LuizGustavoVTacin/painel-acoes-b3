@@ -63,6 +63,7 @@ describe('migrações', () => {
     expect(tabelas).toEqual([
       'acoes_selecionadas',
       'catalogo',
+      'catalogo_lista',
       'cotacoes',
       'estado_api',
       'logos',

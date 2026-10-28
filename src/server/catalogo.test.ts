@@ -16,7 +16,14 @@ const URL_LOGO = 'https://icons.brapi.dev/icons/BBAS3.svg';
 const listaBrapi = (close = 17.38) =>
   json({
     stocks: [
-      { stock: 'BBAS3', name: 'BCO BRASIL S.A.', close, logo: URL_LOGO },
+      {
+        stock: 'BBAS3',
+        name: 'BCO BRASIL S.A.',
+        close,
+        logo: URL_LOGO,
+        sector: 'Finance',
+        change: -1.1,
+      },
       { stock: 'ITUB4', name: 'ITAÚ UNIBANCO', close: 41.19, logo: null },
     ],
   });
@@ -53,9 +60,10 @@ describe('catálogo', () => {
     await catalogo.garantirAtualizado();
 
     expect(catalogo.listar()).toEqual([
-      { ticker: 'BBAS3', nome: 'BCO BRASIL S.A.' },
-      { ticker: 'ITUB4', nome: 'ITAÚ UNIBANCO' },
+      { ticker: 'BBAS3', nome: 'BCO BRASIL S.A.', setor: 'Finance', variacaoDoDia: -110 },
+      { ticker: 'ITUB4', nome: 'ITAÚ UNIBANCO', setor: null, variacaoDoDia: null },
     ]);
+    expect(catalogo.atualizadoEm()).toBe(agora.toISOString());
     expect(catalogo.precos(['BBAS3', 'PETR4'])).toEqual(
       new Map([['BBAS3', { precoCentavos: 1738, atualizadoEm: agora.toISOString() }]]),
     );
@@ -364,7 +372,16 @@ describe('rotas de catálogo, logos e fontes', () => {
 
     expect(resposta.status).toBe(200);
     expect(resposta.body).toEqual({
-      acoes: [{ ticker: 'BBAS3', nome: 'BCO BRASIL S.A.', logo: '/api/logos/BBAS3' }],
+      acoes: [
+        {
+          ticker: 'BBAS3',
+          nome: 'BCO BRASIL S.A.',
+          setor: 'Finance',
+          variacaoDoDia: -110,
+          logo: '/api/logos/BBAS3',
+        },
+      ],
+      atualizadoEm: agora.toISOString(),
     });
   });
 
@@ -374,7 +391,7 @@ describe('rotas de catálogo, logos e fontes', () => {
     const resposta = await request(app).get('/api/catalogo');
 
     expect(resposta.status).toBe(200);
-    expect(resposta.body).toEqual({ acoes: [] });
+    expect(resposta.body).toEqual({ acoes: [], atualizadoEm: null });
   });
 
   it('GET /api/catalogo recusa busca repetida', async () => {
@@ -491,6 +508,82 @@ describe('robustez (pontos da revisão)', () => {
       mensagem: 'A brapi devolveu menos ações que o normal (1 de 3)',
     });
     expect(catalogo.listar()).toHaveLength(3);
+  });
+
+  it('esconde as ações que não vieram numa lista de tamanho normal (saíram da bolsa)', async () => {
+    const acao = (stock: string, change = 1) => ({ stock, name: stock, close: 17, change });
+    const antes = json({ stocks: ['BBAS3', 'ITUB4', 'PETR4'].map((t) => acao(t)) });
+    const depois = json({ stocks: [acao('BBAS3', 2), acao('ITUB4', 3), acao('NOVA3')] });
+    const { catalogo } = montar({ [URL_LISTA_BRAPI]: [antes, depois] });
+    await catalogo.garantirAtualizado();
+    avancar(15 * MINUTO);
+
+    await catalogo.garantirAtualizado();
+
+    expect(catalogo.listar().map((a) => [a.ticker, a.variacaoDoDia])).toEqual([
+      ['BBAS3', 200],
+      ['ITUB4', 300],
+      ['NOVA3', 100],
+    ]);
+    // Continua no banco: o preço de reserva e o logo não se perdem.
+    expect(catalogo.precos(['PETR4']).get('PETR4')?.precoCentavos).toBe(1700);
+  });
+
+  it('ação que volta à lista volta a aparecer', async () => {
+    const acao = (stock: string) => ({ stock, name: stock, close: 17 });
+    const sem = json({ stocks: [acao('BBAS3'), acao('ITUB4')] });
+    const com = json({ stocks: [acao('BBAS3'), acao('ITUB4'), acao('PETR4')] });
+    const { catalogo } = montar({ [URL_LISTA_BRAPI]: [com, sem, com] });
+    await catalogo.garantirAtualizado();
+    avancar(15 * MINUTO);
+    await catalogo.garantirAtualizado();
+    expect(catalogo.listar()).toHaveLength(2);
+    avancar(15 * MINUTO);
+
+    await catalogo.garantirAtualizado();
+
+    expect(catalogo.listar().map((a) => a.ticker)).toEqual(['BBAS3', 'ITUB4', 'PETR4']);
+  });
+
+  it('lista que encolheu demais não esconde nada, nem nas listas seguintes', async () => {
+    const acao = (stock: string) => ({ stock, name: stock, close: 17 });
+    const completa = json({ stocks: ['BBAS3', 'ITUB4', 'PETR4', 'VALE3'].map(acao) });
+    const pequena = json({ stocks: [acao('BBAS3')] });
+    // Depois da falha, uma lista normal com três das quatro: só a ausente some.
+    const normal = json({ stocks: ['BBAS3', 'ITUB4', 'PETR4'].map(acao) });
+    const { catalogo } = montar({ [URL_LISTA_BRAPI]: [completa, pequena, normal] });
+    await catalogo.garantirAtualizado();
+    avancar(15 * MINUTO);
+
+    await catalogo.garantirAtualizado();
+    expect(catalogo.listar()).toHaveLength(4);
+
+    avancar(15 * MINUTO);
+    await catalogo.garantirAtualizado();
+    expect(catalogo.listar().map((a) => a.ticker)).toEqual(['BBAS3', 'ITUB4', 'PETR4']);
+  });
+
+  it('o tamanho normal é medido pelas ações listadas, não pelas que já saíram', async () => {
+    const acao = (stock: string) => ({ stock, name: stock, close: 17 });
+    const lista = (...tickers: string[]) => json({ stocks: tickers.map(acao) });
+    const { catalogo, estado } = montar({
+      [URL_LISTA_BRAPI]: [
+        lista('AAAA3', 'BBBB3', 'CCCC3', 'DDDD3'),
+        lista('AAAA3', 'BBBB3'),
+        lista('AAAA3', 'BBBB3'),
+      ],
+    });
+    await catalogo.garantirAtualizado();
+    avancar(15 * MINUTO);
+    // 2 de 4 é exatamente a metade: lista normal, CCCC3 e DDDD3 saem.
+    await catalogo.garantirAtualizado();
+    expect(catalogo.listar()).toHaveLength(2);
+    avancar(15 * MINUTO);
+
+    await catalogo.garantirAtualizado();
+
+    // Agora 2 de 2: sem aviso de lista pequena, embora o banco guarde 4.
+    expect(estado.consultar('brapi')?.mensagem).toBeNull();
   });
 
   it('relógio atrasado não trava as chamadas', async () => {

@@ -12,6 +12,8 @@
   --sombra: 0 1px 2px rgb(0 0 0 / 6%);
   --destaque: #c2571a;
   --sombra-ativo: 0 6px 18px rgb(0 0 0 / 12%);
+  --alta: #1b7a3a;
+  --baixa: #b3261e;
   color-scheme: light;
   font-family:
     system-ui,
@@ -37,6 +39,8 @@
     --sombra: none;
     --destaque: #e8844a;
     --sombra-ativo: 0 6px 18px rgb(0 0 0 / 45%);
+    --alta: #6fcf8a;
+    --baixa: #f08a80;
     color-scheme: dark;
   }
 }
@@ -400,6 +404,49 @@ button {
   font: inherit;
 }
 
+.escolha-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 14px;
+}
+
+.escolha-filtros label {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.escolha-filtros select {
+  padding: 6px 8px;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  background: var(--fundo);
+  color: var(--texto);
+  font: inherit;
+}
+
+.escolha-nota {
+  margin: 0;
+  color: var(--texto-suave);
+  font-size: 13px;
+}
+
+.escolha-variacao {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.variacao-alta {
+  color: var(--alta);
+}
+
+.variacao-baixa {
+  color: var(--baixa);
+}
+
 .escolha-contador {
   margin: 0;
   color: var(--texto-suave);
@@ -424,7 +471,7 @@ button {
 
 .escolha-item {
   display: grid;
-  grid-template-columns: auto 64px 1fr;
+  grid-template-columns: auto 64px 1fr auto;
   align-items: center;
   gap: 10px;
   padding: 6px 4px;

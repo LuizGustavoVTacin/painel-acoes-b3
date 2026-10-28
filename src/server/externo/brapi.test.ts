@@ -10,6 +10,8 @@ const acao = (stock: string, extras: Record<string, unknown> = {}) => ({
   stock,
   name: `Empresa ${stock}`,
   close: 17.38,
+  change: 1.25,
+  sector: 'Finance',
   logo: `https://icons.brapi.dev/icons/${stock}.svg`,
   type: 'stock',
   ...extras,
@@ -27,18 +29,24 @@ describe('interpretarListaBrapi', () => {
         nome: 'Empresa BBAS3',
         logoUrl: 'https://icons.brapi.dev/icons/BBAS3.svg',
         precoCentavos: 1738,
+        setor: 'Finance',
+        variacaoDoDia: 125,
       },
       {
         ticker: 'TAEE11',
         nome: 'Empresa TAEE11',
         logoUrl: 'https://icons.brapi.dev/icons/TAEE11.svg',
         precoCentavos: 4057,
+        setor: 'Finance',
+        variacaoDoDia: 125,
       },
       {
         ticker: 'B3SA3',
         nome: 'Empresa B3SA3',
         logoUrl: 'https://icons.brapi.dev/icons/B3SA3.svg',
         precoCentavos: 1738,
+        setor: 'Finance',
+        variacaoDoDia: 125,
       },
     ]);
   });
@@ -83,6 +91,35 @@ describe('interpretarListaBrapi', () => {
     ['ausente', undefined],
   ])('ignora logo %s', (_caso, logo) => {
     expect(interpretarListaBrapi({ stocks: [acao('BBAS3', { logo })] })[0].logoUrl).toBeNull();
+  });
+
+  it.each([
+    ['alta', 2.35, 235],
+    ['queda', -6.68, -668],
+    ['zero', 0, 0],
+    ['quase zero negativo (sem -0)', -0.001, 0],
+    ['arredondada', 1.005, 101],
+    ['ausente', undefined, null],
+    ['nula', null, null],
+    ['texto', '1,5', null],
+    ['infinita', Infinity, null],
+    ['NaN', NaN, null],
+    ['absurda', 5000, null],
+  ])('lê a variação do dia em centésimos: %s', (_caso, change, esperado) => {
+    const [item] = interpretarListaBrapi({ stocks: [acao('BBAS3', { change })] });
+    expect(item.variacaoDoDia).toBe(esperado);
+    expect(Object.is(item.variacaoDoDia, -0)).toBe(false);
+  });
+
+  it.each([
+    ['com espaços', '  Utilities ', 'Utilities'],
+    ['ausente', undefined, null],
+    ['nulo', null, null],
+    ['vazio', '   ', null],
+    ['número', 3, null],
+    ['longo demais', 'x'.repeat(61), null],
+  ])('lê o setor: %s', (_caso, sector, esperado) => {
+    expect(interpretarListaBrapi({ stocks: [acao('BBAS3', { sector })] })[0].setor).toBe(esperado);
   });
 
   it.each([

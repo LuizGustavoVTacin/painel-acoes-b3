@@ -394,6 +394,7 @@ describe('App', () => {
             ],
           });
         }
+        if (endereco === '/api/transacoes') return Response.json({ transacoes: [] });
         if (endereco === '/api/selecao') {
           if (opcoes.method === 'PUT') {
             selecao = (JSON.parse(opcoes.body as string) as { tickers: string[] }).tickers;

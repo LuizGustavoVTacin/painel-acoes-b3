@@ -69,7 +69,7 @@ export function RegistroCompras({
   const selecao =
     selecaoAtual ?? (selecaoCarregada.situacao === 'ok' ? selecaoCarregada.dados : null);
   const acoesDoCatalogo = useMemo(
-    () => (catalogo.situacao === 'ok' ? catalogo.dados : []),
+    () => (catalogo.situacao === 'ok' ? catalogo.dados.acoes : []),
     [catalogo],
   );
   /** Códigos da lista da B3; null se o catálogo não carregou (aí não há como conferir). */

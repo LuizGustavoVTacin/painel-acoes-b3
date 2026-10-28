@@ -3,12 +3,39 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EscolhaAcoes } from './EscolhaAcoes';
 import { MenuPrincipal } from './MenuPrincipal';
 
+const acao = (
+  ticker: string,
+  nome: string,
+  setor: string | null,
+  variacaoDoDia: number | null,
+) => ({
+  ticker,
+  nome,
+  setor,
+  variacaoDoDia,
+  logo: `/api/logos/${ticker}`,
+});
+
 const CATALOGO = [
-  { ticker: 'BBAS3', nome: 'Banco do Brasil', logo: '/api/logos/BBAS3' },
-  { ticker: 'ITUB4', nome: 'Itaú Unibanco', logo: '/api/logos/ITUB4' },
-  { ticker: 'PETR4', nome: 'Petrobras', logo: '/api/logos/PETR4' },
-  { ticker: 'VALE3', nome: 'Vale', logo: '/api/logos/VALE3' },
+  acao('BBAS3', 'Banco do Brasil', 'Finance', 235),
+  acao('ITUB4', 'Itaú Unibanco', 'Finance', -110),
+  acao('PETR4', 'Petrobras', 'Energy Minerals', 512),
+  acao('VALE3', 'Vale', 'Non-Energy Minerals', null),
 ];
+const LISTA_DE = '2026-10-28T17:35:00.000Z';
+
+/** Compra mínima no formato de GET /api/transacoes. */
+const compra = (id: number, ticker: string) => ({
+  id,
+  ticker,
+  data: '2026-10-20',
+  quantidade: 100,
+  precoUnitario: 1000,
+  taxas: 0,
+  plataforma: 'BTG',
+  criadoEm: '2026-10-20T13:00:00.000Z',
+  atualizadoEm: '2026-10-20T13:00:00.000Z',
+});
 
 type Rota = (signal?: AbortSignal | null) => Response | Promise<Response>;
 
@@ -20,12 +47,23 @@ function nuncaResponde(signal?: AbortSignal | null): Promise<Response> {
 }
 
 /** Servidor falso: responde por endereço e método; guarda o corpo de cada PUT recebido. */
-function simularServidor(rotas: { catalogo?: Rota; selecao?: Rota; salvar?: Rota } = {}) {
+function simularServidor(
+  rotas: { catalogo?: Rota; selecao?: Rota; salvar?: Rota; transacoes?: Rota } = {},
+) {
   const salvas: unknown[] = [];
   let selecao: string[] = ['PETR4'];
   const fetchFalso = vi.fn(async (endereco: string, opcoes: RequestInit = {}) => {
     if (endereco === '/api/catalogo') {
-      return rotas.catalogo ? rotas.catalogo(opcoes.signal) : Response.json({ acoes: CATALOGO });
+      return rotas.catalogo
+        ? rotas.catalogo(opcoes.signal)
+        : Response.json({ acoes: CATALOGO, atualizadoEm: LISTA_DE });
+    }
+    if (endereco === '/api/transacoes') {
+      return rotas.transacoes
+        ? rotas.transacoes(opcoes.signal)
+        : Response.json({
+            transacoes: [compra(1, 'ITUB4'), compra(2, 'ITUB4'), compra(3, 'ELET3')],
+          });
     }
     if (endereco === '/api/selecao' && opcoes.method === 'PUT') {
       const corpo = JSON.parse(opcoes.body as string) as { tickers: string[] };
@@ -119,7 +157,7 @@ describe('MenuPrincipal', () => {
     expect(linhas()).toEqual(['ITUB4']);
 
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'xyz' } });
-    expect(screen.getByText('Nenhuma ação encontrada.')).toBeInTheDocument();
+    expect(screen.getByText('Nenhuma ação encontrada com estes filtros.')).toBeInTheDocument();
   });
 
   it('marca, desmarca e salva na ordem de escolha; depois avisa e fecha', async () => {
@@ -441,5 +479,95 @@ describe('EscolhaAcoes com tempo limite', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('respondeu com erro (500)');
     expect(aoTalvezSalvo).not.toHaveBeenCalled();
+  });
+});
+
+describe('EscolhaAcoes: filtros', () => {
+  afterEach(cleanup);
+
+  const setor = () => screen.getByRole('combobox', { name: 'Setor' });
+  const mostrar = () => screen.getByRole('combobox', { name: 'Mostrar' });
+
+  async function abrir() {
+    render(<MenuPrincipal aoSalvarSelecao={() => {}} />);
+    await abrirEscolha();
+    await screen.findByText(/Variação do dia segundo a brapi/);
+  }
+
+  it('setores em português, com a quantidade de ações de cada um', async () => {
+    simularServidor();
+    await abrir();
+
+    expect(
+      within(setor())
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual([
+      'Todos (4)',
+      'Finanças (2)',
+      'Mineração e siderurgia (1)',
+      'Petróleo, gás e carvão (1)',
+    ]);
+
+    fireEvent.change(setor(), { target: { value: 'Finance' } });
+    expect(linhas()).toEqual(['BBAS3', 'ITUB4']);
+    expect(screen.getByText(/Mostrando 2 ações\./)).toBeInTheDocument();
+  });
+
+  it('em alta e em baixa ordenam pela variação do dia', async () => {
+    simularServidor();
+    await abrir();
+
+    fireEvent.change(mostrar(), { target: { value: 'alta' } });
+    expect(linhas()).toEqual(['PETR4', 'BBAS3']);
+
+    fireEvent.change(mostrar(), { target: { value: 'baixa' } });
+    expect(linhas()).toEqual(['ITUB4']);
+    expect(screen.getByText(/Mostrando 1 ação\./)).toBeInTheDocument();
+  });
+
+  it('cada linha mostra a variação do dia; sem variação, nada', async () => {
+    simularServidor();
+    await abrir();
+
+    expect(caixa('PETR4').closest('label')).toHaveTextContent('▲ +5,12%');
+    expect(caixa('ITUB4').closest('label')).toHaveTextContent('▼ -1,10%');
+    expect(caixa('VALE3').closest('label')).not.toHaveTextContent('%');
+    expect(screen.getByText(/lista de 28\/10\/2026 14:35/)).toBeInTheDocument();
+  });
+
+  it('que comprei: só as compradas, inclusive as que saíram da bolsa', async () => {
+    simularServidor();
+    await abrir();
+
+    const opcao = within(mostrar()).getByRole('option', { name: 'Que comprei' });
+    await waitFor(() => expect(opcao).toBeEnabled());
+    fireEvent.change(mostrar(), { target: { value: 'compradas' } });
+
+    expect(linhas()).toEqual(['ITUB4', 'ELET3']);
+    expect(caixa('ELET3').closest('label')).toHaveTextContent('fora da lista atual da B3');
+  });
+
+  it('sem as compras, "Que comprei" fica desabilitado e o painel avisa', async () => {
+    simularServidor({ transacoes: () => new Response('erro', { status: 500 }) });
+    await abrir();
+
+    expect(within(mostrar()).getByRole('option', { name: 'Que comprei' })).toBeDisabled();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar suas compras',
+    );
+    expect(linhas()).toEqual(['PETR4', 'BBAS3', 'ITUB4', 'VALE3']);
+  });
+
+  it('marcar uma ação filtrada mantém a marcação ao trocar de filtro', async () => {
+    simularServidor();
+    await abrir();
+
+    fireEvent.change(setor(), { target: { value: 'Finance' } });
+    fireEvent.click(caixa('ITUB4'));
+    fireEvent.change(setor(), { target: { value: '' } });
+
+    expect(caixa('ITUB4')).toBeChecked();
+    expect(screen.getByText('2 de 50 selecionadas')).toBeInTheDocument();
   });
 });

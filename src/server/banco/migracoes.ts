@@ -93,6 +93,18 @@ const MIGRACOES: readonly string[] = [
     CHECK (inicio < fim)
   ) STRICT;
   `,
+  `
+  ALTER TABLE catalogo ADD COLUMN setor TEXT;
+  -- Variação do dia em centésimos de ponto percentual (-668 = -6,68%).
+  ALTER TABLE catalogo ADD COLUMN variacao_centesimos INTEGER;
+
+  -- Momento da última lista da brapi de tamanho normal (uma única linha). Ações que não vieram
+  -- nela saíram da bolsa e deixam de ser oferecidas no menu.
+  CREATE TABLE catalogo_lista (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    completa_em TEXT NOT NULL
+  ) STRICT;
+  `,
 ];
 
 export const VERSAO_ATUAL = MIGRACOES.length;

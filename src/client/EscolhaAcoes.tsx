@@ -1,8 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LIMITE_ACOES_SELECIONADAS, type AcaoCatalogo } from '../shared/selecao';
+import { formatarHorario } from '../shared/datas';
+import { formatarPercentual } from '../shared/posicao';
+import { LIMITE_ACOES_SELECIONADAS } from '../shared/selecao';
 import type { Ticker } from '../shared/ticker';
-import { buscarCatalogo, buscarSelecao, ErroApi, salvarSelecao } from './api';
-import { alternarAcao, montarListaEscolha, selecaoFinal } from './escolha';
+import {
+  buscarCatalogo,
+  buscarSelecao,
+  ErroApi,
+  listarTransacoes,
+  salvarSelecao,
+  type Catalogo,
+} from './api';
+import {
+  alternarAcao,
+  contarSetores,
+  montarListaEscolha,
+  selecaoFinal,
+  type ModoEscolha,
+} from './escolha';
 import { Painel } from './Painel';
 import { comTempoLimite, ErroTempoEsgotado, TEMPO_LIMITE_PAINEL_MS, useCarga } from './useCarga';
 
@@ -22,10 +37,22 @@ const iguais = (a: readonly Ticker[], b: readonly Ticker[]) =>
  * O servidor responde com lista vazia quando ainda não conseguiu baixar o catálogo da brapi;
  * para quem escolhe, isso é uma falha (com "Tentar de novo"), não "nenhuma ação".
  */
-async function buscarCatalogoPreenchido(signal: AbortSignal): Promise<AcaoCatalogo[]> {
-  const acoes = await buscarCatalogo(signal);
-  if (acoes.length === 0) throw new ErroApi('Catálogo vazio');
-  return acoes;
+async function buscarCatalogoPreenchido(signal: AbortSignal): Promise<Catalogo> {
+  const catalogo = await buscarCatalogo(signal);
+  if (catalogo.acoes.length === 0) throw new ErroApi('Catálogo vazio');
+  return catalogo;
+}
+
+/** Variação do dia com seta e sinal: "▲ +2,35%", "▼ -1,10%", "0,00%". */
+function VariacaoDoDia({ centesimos }: { centesimos: number }) {
+  const direcao = centesimos > 0 ? 'alta' : centesimos < 0 ? 'baixa' : 'neutra';
+  const seta = { alta: '▲ ', baixa: '▼ ', neutra: '' }[direcao];
+  return (
+    <span className={`escolha-variacao variacao-${direcao}`}>
+      <span aria-hidden="true">{seta}</span>
+      {formatarPercentual(centesimos)}
+    </span>
+  );
 }
 
 /**
@@ -40,9 +67,13 @@ export function EscolhaAcoes({
 }: PropsEscolha) {
   const [salvas, recarregarSalvas] = useCarga(buscarSelecao, tempoLimiteMs);
   const [catalogo, recarregarCatalogo] = useCarga(buscarCatalogoPreenchido, tempoLimiteMs);
+  const [compras, recarregarCompras] = useCarga(listarTransacoes, tempoLimiteMs);
   /** Rascunho; null até a primeira marcação (vale a seleção salva). */
   const [rascunho, setRascunho] = useState<Ticker[] | null>(null);
   const [busca, setBusca] = useState('');
+  /** Setor escolhido no filtro; '' = todos. */
+  const [setor, setSetor] = useState('');
+  const [modo, setModo] = useState<ModoEscolha>('todas');
   const [salvando, setSalvando] = useState(false);
   const [erroAoSalvar, setErroAoSalvar] = useState<string | null>(null);
   const campoBusca = useRef<HTMLInputElement>(null);
@@ -56,12 +87,26 @@ export function EscolhaAcoes({
   }, []);
 
   const tickersSalvos = salvas.situacao === 'ok' ? salvas.dados : null;
-  const acoesDoCatalogo = catalogo.situacao === 'ok' ? catalogo.dados : null;
+  const acoesDoCatalogo = catalogo.situacao === 'ok' ? catalogo.dados.acoes : null;
+  const listaDe = catalogo.situacao === 'ok' ? catalogo.dados.atualizadoEm : null;
+  const compradas = useMemo(
+    () => (compras.situacao === 'ok' ? new Set(compras.dados.map(({ ticker }) => ticker)) : null),
+    [compras],
+  );
+  const setores = useMemo(() => contarSetores(acoesDoCatalogo ?? []), [acoesDoCatalogo]);
   const marcadas = rascunho ?? tickersSalvos ?? [];
   // Enquanto o catálogo não chega, as salvas já aparecem (só com o código).
   const itens = useMemo(
-    () => (tickersSalvos ? montarListaEscolha(acoesDoCatalogo ?? [], tickersSalvos, busca) : []),
-    [acoesDoCatalogo, tickersSalvos, busca],
+    () =>
+      tickersSalvos
+        ? montarListaEscolha(acoesDoCatalogo ?? [], tickersSalvos, {
+            busca,
+            setor: setor || null,
+            modo,
+            compradas: compradas ?? undefined,
+          })
+        : [],
+    [acoesDoCatalogo, tickersSalvos, busca, setor, modo, compradas],
   );
   const aSalvar = tickersSalvos && selecaoFinal(tickersSalvos, marcadas);
 
@@ -70,6 +115,7 @@ export function EscolhaAcoes({
     campoBusca.current?.focus();
     recarregarSalvas();
     recarregarCatalogo();
+    recarregarCompras();
   }
 
   function alternar(ticker: Ticker): void {
@@ -113,6 +159,8 @@ export function EscolhaAcoes({
     aviso =
       'Não foi possível carregar a lista de ações da B3; por enquanto só as selecionadas aparecem. ' +
       'A lista é baixada da brapi no máximo a cada 15 minutos: se a falha continuar, tente mais tarde.';
+  } else if (compras.situacao === 'erro') {
+    aviso = 'Não foi possível carregar suas compras; o filtro “Que comprei” fica indisponível.';
   }
 
   let lista;
@@ -122,11 +170,13 @@ export function EscolhaAcoes({
     lista = null;
   } else if (itens.length === 0) {
     lista =
-      catalogo.situacao === 'carregando' ? null : <p className="vazio">Nenhuma ação encontrada.</p>;
+      catalogo.situacao === 'carregando' ? null : (
+        <p className="vazio">Nenhuma ação encontrada com estes filtros.</p>
+      );
   } else {
     lista = (
       <ul className="escolha-lista" aria-label="Ações disponíveis">
-        {itens.map(({ ticker, nome, foraDoCatalogo }) => {
+        {itens.map(({ ticker, nome, variacaoDoDia, foraDoCatalogo }) => {
           const marcada = marcadasSet.has(ticker);
           let descricao = nome;
           if (foraDoCatalogo && acoesDoCatalogo) descricao = 'fora da lista atual da B3';
@@ -142,6 +192,12 @@ export function EscolhaAcoes({
                 />
                 <span className="ticker">{ticker}</span>{' '}
                 <span className="escolha-nome">{descricao}</span>
+                {variacaoDoDia !== null && (
+                  <>
+                    {' '}
+                    <VariacaoDoDia centesimos={variacaoDoDia} />
+                  </>
+                )}
               </label>
             </li>
           );
@@ -169,6 +225,46 @@ export function EscolhaAcoes({
           }
         }}
       />
+
+      <div className="escolha-filtros">
+        <label>
+          Setor
+          <select
+            value={setor}
+            disabled={salvando || !acoesDoCatalogo}
+            onChange={(evento) => setSetor(evento.target.value)}
+          >
+            <option value="">Todos{acoesDoCatalogo && ` (${acoesDoCatalogo.length})`}</option>
+            {setores.map((opcao) => (
+              <option key={opcao.setor} value={opcao.setor}>
+                {opcao.nome} ({opcao.quantidade})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Mostrar
+          <select
+            value={modo}
+            disabled={salvando}
+            onChange={(evento) => setModo(evento.target.value as ModoEscolha)}
+          >
+            <option value="todas">Todas</option>
+            <option value="alta">Em alta hoje</option>
+            <option value="baixa">Em baixa hoje</option>
+            <option value="compradas" disabled={!compradas}>
+              Que comprei
+            </option>
+          </select>
+        </label>
+      </div>
+
+      {tickersSalvos && (
+        <p className="escolha-nota">
+          Mostrando {itens.length} {itens.length === 1 ? 'ação' : 'ações'}.
+          {listaDe && ` Variação do dia segundo a brapi (lista de ${formatarHorario(listaDe)}).`}
+        </p>
+      )}
 
       {tickersSalvos && (
         <p className="escolha-contador" aria-live="polite">
