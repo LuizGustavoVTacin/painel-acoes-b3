@@ -9,6 +9,8 @@ interface PropsEscolha {
   aoFechar: () => void;
   /** Chamado depois que o servidor confirmou a nova seleção. */
   aoSalvar: () => void;
+  /** O salvamento expirou: o servidor pode ter gravado mesmo assim, então a grade deve conferir. */
+  aoTalvezSalvo?: () => void;
   tempoLimiteMs?: number;
 }
 
@@ -31,20 +33,25 @@ async function buscarCatalogoPreenchido(signal: AbortSignal): Promise<AcaoCatalo
   return acoes;
 }
 
-/** Mantém o Tab dentro do painel: do último elemento volta ao primeiro, e vice-versa. */
+/**
+ * Mantém o Tab dentro do painel: do último elemento volta ao primeiro, e vice-versa.
+ * Com o foco no próprio painel (clique numa área sem botão), o Tab vai para o primeiro.
+ */
 function prenderFoco(evento: KeyboardEvent<HTMLElement>): void {
-  const focaveis = evento.currentTarget.querySelectorAll<HTMLElement>(
-    'input:not(:disabled), button:not(:disabled)',
-  );
+  const focaveis = [
+    ...evento.currentTarget.querySelectorAll<HTMLElement>(
+      'input:not(:disabled), button:not(:disabled)',
+    ),
+  ];
   if (focaveis.length === 0) return;
-  const primeiro = focaveis[0];
-  const ultimo = focaveis[focaveis.length - 1];
-  if (evento.shiftKey && document.activeElement === primeiro) {
+  const posicao = focaveis.indexOf(document.activeElement as HTMLElement);
+  const ultima = focaveis.length - 1;
+  if (evento.shiftKey && posicao <= 0) {
     evento.preventDefault();
-    ultimo.focus();
-  } else if (!evento.shiftKey && document.activeElement === ultimo) {
+    focaveis[ultima].focus();
+  } else if (!evento.shiftKey && (posicao === -1 || posicao === ultima)) {
     evento.preventDefault();
-    primeiro.focus();
+    focaveis[0].focus();
   }
 }
 
@@ -55,6 +62,7 @@ function prenderFoco(evento: KeyboardEvent<HTMLElement>): void {
 export function EscolhaAcoes({
   aoFechar,
   aoSalvar,
+  aoTalvezSalvo,
   tempoLimiteMs = TEMPO_LIMITE_ESCOLHA_MS,
 }: PropsEscolha) {
   const [salvas, recarregarSalvas] = useCarga(buscarSelecao, tempoLimiteMs);
@@ -65,14 +73,21 @@ export function EscolhaAcoes({
   const [salvando, setSalvando] = useState(false);
   const [erroAoSalvar, setErroAoSalvar] = useState<string | null>(null);
   const campoBusca = useRef<HTMLInputElement>(null);
+  const painel = useRef<HTMLElement>(null);
   const montado = useRef(true);
   const idTitulo = useId();
 
   useEffect(() => {
     montado.current = true;
     campoBusca.current?.focus();
+    // O foco que escapa do painel (ex.: Tab vindo da barra do navegador) volta para a busca.
+    function aoFocar(evento: FocusEvent): void {
+      if (!painel.current?.contains(evento.target as Node)) campoBusca.current?.focus();
+    }
+    document.addEventListener('focusin', aoFocar);
     return () => {
       montado.current = false;
+      document.removeEventListener('focusin', aoFocar);
     };
   }, []);
 
@@ -87,6 +102,8 @@ export function EscolhaAcoes({
   const aSalvar = tickersSalvos && selecaoFinal(tickersSalvos, marcadas);
 
   function tentarDeNovo(): void {
+    // O botão some durante a nova carga; o foco não pode cair fora do painel.
+    campoBusca.current?.focus();
     recarregarSalvas();
     recarregarCatalogo();
   }
@@ -97,21 +114,27 @@ export function EscolhaAcoes({
 
   async function salvar(): Promise<void> {
     if (!aSalvar) return;
+    // O botão Salvar fica desabilitado; o foco vai para a busca para continuar dentro do painel.
+    campoBusca.current?.focus();
     setSalvando(true);
     setErroAoSalvar(null);
+    const controle = new AbortController();
     try {
-      await comTempoLimite(
-        (signal) => salvarSelecao(aSalvar, signal),
-        new AbortController(),
-        tempoLimiteMs,
-      );
+      await comTempoLimite((signal) => salvarSelecao(aSalvar, signal), controle, tempoLimiteMs);
       // Mesmo com o painel já fechado, o servidor gravou: a grade precisa ser atualizada.
       aoSalvar();
     } catch (erro) {
+      const expirou = controle.signal.aborted;
+      if (expirou) aoTalvezSalvo?.();
       if (!montado.current) return;
-      setErroAoSalvar(
-        erro instanceof ErroApi ? erro.message : 'Não foi possível salvar a seleção; tente de novo',
-      );
+      let mensagem = 'Não foi possível salvar a seleção; tente de novo';
+      if (expirou) {
+        mensagem =
+          'O servidor demorou para responder; a seleção pode ter sido salva. Confira a grade ou tente de novo';
+      } else if (erro instanceof ErroApi) {
+        mensagem = erro.message;
+      }
+      setErroAoSalvar(mensagem);
       setSalvando(false);
     }
   }
@@ -140,7 +163,8 @@ export function EscolhaAcoes({
   if (salvas.situacao === 'erro') aviso = 'Não foi possível carregar as ações selecionadas.';
   else if (catalogo.situacao === 'erro') {
     aviso =
-      'Não foi possível carregar a lista de ações da B3; por enquanto só as selecionadas aparecem.';
+      'Não foi possível carregar a lista de ações da B3; por enquanto só as selecionadas aparecem. ' +
+      'A lista é baixada da brapi no máximo a cada 15 minutos: se a falha continuar, tente mais tarde.';
   }
 
   let lista;
@@ -181,8 +205,14 @@ export function EscolhaAcoes({
   return (
     <>
       {/* Fundo que bloqueia a grade enquanto o painel está aberto. */}
-      <div className="escolha-fundo" aria-hidden="true" />
+      <div
+        className="escolha-fundo"
+        aria-hidden="true"
+        onMouseDown={(evento) => evento.preventDefault()}
+      />
       <section
+        ref={painel}
+        tabIndex={-1}
         className="escolha"
         role="dialog"
         aria-modal="true"

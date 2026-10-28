@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { EscolhaAcoes } from './EscolhaAcoes';
 
 interface PropsMenu {
-  /** Chamado depois que uma nova seleção de ações foi salva. */
+  /** Chamado depois que uma nova seleção de ações foi (ou pode ter sido) salva. */
   aoSalvarSelecao: () => void;
 }
 
@@ -13,6 +13,14 @@ export function MenuPrincipal({ aoSalvarSelecao }: PropsMenu) {
   const raiz = useRef<HTMLDivElement>(null);
   const botao = useRef<HTMLButtonElement>(null);
   const idOpcoes = useId();
+  /** O foco volta ao botão só depois que o painel sai da tela (ele prende o foco enquanto existe). */
+  const devolverFoco = useRef(false);
+
+  useEffect(() => {
+    if (escolhendo || !devolverFoco.current) return;
+    devolverFoco.current = false;
+    botao.current?.focus();
+  }, [escolhendo]);
 
   // Clique fora do menu fecha a lista de opções.
   useEffect(() => {
@@ -35,8 +43,8 @@ export function MenuPrincipal({ aoSalvarSelecao }: PropsMenu) {
   }
 
   function fecharEscolha(): void {
+    devolverFoco.current = true;
     setEscolhendo(false);
-    botao.current?.focus();
   }
 
   return (
@@ -78,6 +86,7 @@ export function MenuPrincipal({ aoSalvarSelecao }: PropsMenu) {
             fecharEscolha();
             aoSalvarSelecao();
           }}
+          aoTalvezSalvo={aoSalvarSelecao}
         />
       )}
     </div>

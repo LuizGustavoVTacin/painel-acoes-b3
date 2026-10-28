@@ -346,6 +346,55 @@ describe('MenuPrincipal', () => {
   });
 });
 
+describe('EscolhaAcoes: o foco não escapa do painel', () => {
+  afterEach(cleanup);
+
+  async function abrirPainel() {
+    simularServidor();
+    render(
+      <>
+        <button type="button">fora</button>
+        <EscolhaAcoes aoFechar={() => {}} aoSalvar={() => {}} />
+      </>,
+    );
+    await screen.findByRole('list', { name: 'Ações disponíveis' });
+  }
+
+  it('foco que vai para fora do painel volta para a busca', async () => {
+    await abrirPainel();
+    screen.getByRole('button', { name: 'fora' }).focus();
+    expect(screen.getByRole('searchbox')).toHaveFocus();
+  });
+
+  it('ao clicar em Salvar, o foco fica na busca (o botão é desabilitado)', async () => {
+    simularServidor({ salvar: nuncaResponde });
+    render(<EscolhaAcoes aoFechar={() => {}} aoSalvar={() => {}} />);
+    await screen.findByRole('list', { name: 'Ações disponíveis' });
+    fireEvent.click(caixa('BBAS3'));
+    screen.getByRole('button', { name: 'Salvar' }).focus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    expect(screen.getByRole('searchbox')).toHaveFocus();
+  });
+
+  it('com o foco no próprio painel, Tab vai para a busca e Esc fecha', async () => {
+    simularServidor();
+    const aoFechar = vi.fn();
+    render(<EscolhaAcoes aoFechar={aoFechar} aoSalvar={() => {}} />);
+    await screen.findByRole('list', { name: 'Ações disponíveis' });
+    const dialogo = screen.getByRole('dialog');
+
+    dialogo.focus();
+    fireEvent.keyDown(dialogo, { key: 'Tab' });
+    expect(screen.getByRole('searchbox')).toHaveFocus();
+
+    dialogo.focus();
+    fireEvent.keyDown(dialogo, { key: 'Escape' });
+    expect(aoFechar).toHaveBeenCalledOnce();
+  });
+});
+
 describe('EscolhaAcoes com tempo limite', () => {
   afterEach(cleanup);
 
@@ -358,17 +407,39 @@ describe('EscolhaAcoes com tempo limite', () => {
     );
   });
 
-  it('salvamento travado: depois do tempo limite mostra o erro e libera o painel', async () => {
+  it('salvamento que expira avisa que pode ter sido salvo e pede para a grade conferir', async () => {
     simularServidor({ salvar: nuncaResponde });
     const aoSalvar = vi.fn();
-    render(<EscolhaAcoes aoFechar={() => {}} aoSalvar={aoSalvar} tempoLimiteMs={30} />);
+    const aoTalvezSalvo = vi.fn();
+    render(
+      <EscolhaAcoes
+        aoFechar={() => {}}
+        aoSalvar={aoSalvar}
+        aoTalvezSalvo={aoTalvezSalvo}
+        tempoLimiteMs={30}
+      />,
+    );
     await screen.findByRole('list', { name: 'Ações disponíveis' });
 
     fireEvent.click(caixa('BBAS3'));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível salvar a seleção');
+    expect(await screen.findByRole('alert')).toHaveTextContent('a seleção pode ter sido salva');
     expect(screen.getByRole('button', { name: 'Cancelar' })).toBeEnabled();
+    expect(aoTalvezSalvo).toHaveBeenCalledOnce();
     expect(aoSalvar).not.toHaveBeenCalled();
+  });
+
+  it('erro comum ao salvar não pede para a grade conferir', async () => {
+    simularServidor({ salvar: () => new Response('erro', { status: 500 }) });
+    const aoTalvezSalvo = vi.fn();
+    render(<EscolhaAcoes aoFechar={() => {}} aoSalvar={() => {}} aoTalvezSalvo={aoTalvezSalvo} />);
+    await screen.findByRole('list', { name: 'Ações disponíveis' });
+
+    fireEvent.click(caixa('BBAS3'));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('respondeu com erro (500)');
+    expect(aoTalvezSalvo).not.toHaveBeenCalled();
   });
 });

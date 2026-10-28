@@ -379,6 +379,11 @@ button {
   box-shadow: var(--sombra-ativo);
 }
 
+/* O painel recebe foco só para não deixá-lo escapar; o contorno ficaria no painel inteiro. */
+.escolha:focus {
+  outline: none;
+}
+
 .escolha h2 {
   margin: 0;
   font-size: 18px;
