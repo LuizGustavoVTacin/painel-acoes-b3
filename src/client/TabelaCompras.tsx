@@ -30,7 +30,9 @@ export function TabelaCompras({
   aoMudarExclusao,
   aoPerderFoco,
 }: PropsTabela) {
-  const [confirmando, setConfirmando] = useState<number | null>(null);
+  const [confirmacao, setConfirmando] = useState<number | null>(null);
+  // Se a compra sumiu da lista (ex.: excluída em outra aba), a pergunta some junto.
+  const confirmando = compras.some((compra) => compra.id === confirmacao) ? confirmacao : null;
   const [excluindo, setExcluindo] = useState<number | null>(null);
   const [erro, setErro] = useState<{ id: number; mensagem: string } | null>(null);
 

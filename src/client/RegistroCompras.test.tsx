@@ -376,6 +376,46 @@ describe('RegistroCompras', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: 'Registrar compras' })).toBeInTheDocument();
     await waitFor(() => expect(linhas()).toHaveLength(1));
+    // O que foi digitado fica, para registrar como compra nova se quiser.
+    expect(campo('Código')).toHaveValue('VALE3');
+    expect(screen.getByRole('button', { name: 'Registrar compra' })).toBeInTheDocument();
+  });
+
+  it('recarga que falha depois de gravar mantém a lista e avisa', async () => {
+    let falharListagem = false;
+    simularServidor({
+      listar: () => (falharListagem ? new Response('erro', { status: 500 }) : null),
+    });
+    await abrirPainel();
+
+    falharListagem = true;
+    preencher(compraBBAS3);
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar compra' }));
+
+    expect(await screen.findByText(/a lista; ela pode estar desatualizada/)).toBeInTheDocument();
+    expect(linhas()).toHaveLength(1);
+    expect(screen.getByRole('table', { name: 'Resumo por ação' })).toBeInTheDocument();
+
+    falharListagem = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    await waitFor(() => expect(linhas()).toHaveLength(2));
+    expect(screen.queryByText(/pode estar desatualizada/)).not.toBeInTheDocument();
+  });
+
+  it('linha em confirmação que some numa recarga: a pergunta some e o foco volta ao formulário', async () => {
+    const servidor = simularServidor({ compras: [compra(1), compra(2, { ticker: 'VALE3' })] });
+    await abrirPainel();
+
+    fireEvent.click(screen.getByRole('button', { name: /Excluir a compra de VALE3/ }));
+    expect(screen.getByRole('button', { name: 'Não' })).toHaveFocus();
+
+    // Outra aba exclui a mesma compra; uma gravação aqui faz a lista ser buscada de novo.
+    servidor.apagar(2);
+    preencher(compraBBAS3);
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar compra' }));
+
+    await waitFor(() => expect(screen.queryByText('Excluir esta compra?')).not.toBeInTheDocument());
+    expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement);
   });
 
   it('Esc na pergunta de exclusão desiste só dela; o foco fica no painel', async () => {

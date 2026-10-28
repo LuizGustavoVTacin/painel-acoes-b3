@@ -62,7 +62,17 @@ export function Painel({
       if (!painel.current?.contains(evento.target as Node)) focoInicial.current?.focus();
     }
     document.addEventListener('focusin', aoFocar);
-    return () => document.removeEventListener('focusin', aoFocar);
+    // Quando o elemento com foco some (ex.: a linha de uma compra excluída), o navegador manda
+    // o foco para o <body> sem avisar; aqui ele volta para dentro do painel.
+    const observador = new MutationObserver(() => {
+      const ativo = document.activeElement;
+      if (!ativo || ativo === document.body) focoInicial.current?.focus();
+    });
+    if (painel.current) observador.observe(painel.current, { childList: true, subtree: true });
+    return () => {
+      document.removeEventListener('focusin', aoFocar);
+      observador.disconnect();
+    };
   }, [focoInicial]);
 
   function aoTeclar(evento: KeyboardEvent<HTMLElement>): void {

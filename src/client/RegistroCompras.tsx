@@ -112,10 +112,14 @@ export function RegistroCompras({
       );
     } catch (erro) {
       if (editando && erro instanceof ErroApi && erro.status === 404) {
-        // Excluída em outra aba (ou antes): sai da edição e mostra a lista como está.
+        // Excluída em outra aba (ou antes): sai da edição, mas guarda o que foi digitado.
         recarregar();
-        cancelarEdicao();
-        setRecado('A compra que você editava não existe mais; a lista foi atualizada.');
+        setEditando(null);
+        recomecarFormulario(textoDaCompra(dados));
+        setRecado(
+          'A compra que você editava não existe mais; a lista foi atualizada. O que você digitou ' +
+            'continua no formulário, se quiser registrar como compra nova.',
+        );
         return;
       }
       if (!(erro instanceof ErroTempoEsgotado)) throw erro;
@@ -274,6 +278,14 @@ export function RegistroCompras({
           <p role="status" className="aviso-grade">
             {recado}
           </p>
+        )}
+        {carga.situacao === 'ok' && carga.desatualizada && (
+          <div role="alert" className="erro painel-aviso">
+            Não foi possível atualizar a lista; ela pode estar desatualizada.{' '}
+            <button type="button" onClick={tentarDeNovo} disabled={travado}>
+              Tentar de novo
+            </button>
+          </div>
         )}
         {lista}
       </section>
