@@ -5,7 +5,7 @@ import { contarColunas } from './vizinhos';
  * Colunas que o CSS realmente montou na grade, relidas quando ela muda de tamanho.
  * null enquanto não se sabe (ou sem ResizeObserver e sem layout): aí não há vizinhos.
  */
-export function useColunas(grade: RefObject<HTMLElement | null>, total: number): number | null {
+export function useColunas(grade: RefObject<HTMLElement | null>): number | null {
   const [colunas, setColunas] = useState<number | null>(null);
 
   useEffect(() => {
@@ -17,7 +17,7 @@ export function useColunas(grade: RefObject<HTMLElement | null>, total: number):
     const observador = new ResizeObserver(ler);
     observador.observe(elemento);
     return () => observador.disconnect();
-  }, [grade, total]);
+  }, [grade]);
 
   return colunas;
 }

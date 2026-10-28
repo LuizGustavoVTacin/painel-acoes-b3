@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GradeAcoes } from './GradeAcoes';
 import { cotacao } from './testes/respostas';
@@ -42,11 +43,22 @@ function prepararAmbiente() {
     },
   );
   vi.stubGlobal('matchMedia', (consulta: string) => ({
-    matches: consulta === '(hover: hover)' && temHover,
-    addEventListener() {},
-    removeEventListener() {},
+    get matches() {
+      return consulta === '(hover: hover)' && temHover;
+    },
+    addEventListener(_tipo: string, aviso: () => void) {
+      avisarMudancaDeHover = aviso;
+    },
+    removeEventListener() {
+      avisarMudancaDeHover = () => {};
+    },
   }));
+  // O jsdom diz que a janela nunca tem foco; no navegador, ela tem enquanto o usuário está nela.
+  vi.spyOn(document, 'hasFocus').mockImplementation(() => janelaComFoco);
 }
+
+let avisarMudancaDeHover: () => void = () => {};
+let janelaComFoco = true;
 
 const quadrado = (ticker: string) => screen.getByText(ticker).closest('li')!;
 
@@ -68,6 +80,7 @@ describe('GradeAcoes', () => {
   beforeEach(() => {
     colunasDoLayout = '150px 150px 150px';
     temHover = true;
+    janelaComFoco = true;
     prepararAmbiente();
   });
   afterEach(cleanup);
@@ -196,6 +209,25 @@ describe('GradeAcoes', () => {
       expect(destaques().ativo).toEqual([]);
     });
 
+    it('tocar no vão entre os quadrados apaga', () => {
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      tocar(quadrado('B3SA3'));
+
+      tocar(screen.getByRole('list', { name: 'Ações acompanhadas' }));
+
+      expect(destaques().ativo).toEqual([]);
+    });
+
+    it('mouse ligado num tablet: passa a destacar ao passar por cima', () => {
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+
+      temHover = true;
+      act(() => avisarMudancaDeHover());
+      passarMouse('B3SA3');
+
+      expect(destaques().ativo).toEqual(['B3SA3']);
+    });
+
     it('mouse num aparelho sem hover funciona como toque', () => {
       render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
 
@@ -207,14 +239,83 @@ describe('GradeAcoes', () => {
   });
 
   describe('com teclado', () => {
-    it('só um quadrado entra no Tab: o primeiro, depois o último destacado', () => {
+    it('só um quadrado entra no Tab: o primeiro, depois o último focado ou tocado', () => {
+      temHover = false;
       render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
       const tabulaveis = () => TICKERS.filter((t) => quadrado(t).tabIndex === 0);
 
       expect(tabulaveis()).toEqual(['BBAS3']);
 
-      passarMouse('B3SA3');
+      tocar(quadrado('B3SA3'));
       expect(tabulaveis()).toEqual(['B3SA3']);
+
+      act(() => quadrado('WEGE3').focus());
+      expect(tabulaveis()).toEqual(['WEGE3']);
+    });
+
+    it('o mouse passando não tira o ponto de Tab do quadrado focado', () => {
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      act(() => quadrado('BBDC4').focus());
+
+      passarMouse('BBAS3');
+
+      expect(quadrado('BBDC4').tabIndex).toBe(0);
+      expect(destaques().ativo).toEqual(['BBAS3']);
+      // A seta parte do quadrado focado.
+      fireEvent.keyDown(quadrado('BBDC4'), { key: 'ArrowLeft' });
+      expect(destaques().ativo).toEqual(['ABEV3']);
+    });
+
+    it('mouse saindo da grade devolve o destaque ao quadrado focado pelo teclado', () => {
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      act(() => quadrado('BBDC4').focus());
+      passarMouse('BBAS3');
+
+      fireEvent.pointerOut(quadrado('BBAS3'), {
+        pointerType: 'mouse',
+        relatedTarget: document.body,
+      });
+
+      expect(destaques().ativo).toEqual(['BBDC4']);
+    });
+
+    it('teclas com Alt, Ctrl, Shift ou Meta ficam com o navegador', () => {
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      act(() => quadrado('PETR4').focus());
+
+      for (const modificador of ['altKey', 'ctrlKey', 'shiftKey', 'metaKey']) {
+        const naoBloqueou = fireEvent.keyDown(quadrado('PETR4'), {
+          key: 'ArrowLeft',
+          [modificador]: true,
+        });
+        expect(naoBloqueou).toBe(true);
+      }
+      expect(destaques().ativo).toEqual(['PETR4']);
+    });
+
+    it('anuncia o ativo e explica as setas para leitores de tela', () => {
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      act(() => quadrado('PETR4').focus());
+
+      expect(quadrado('PETR4')).toHaveAttribute('aria-current', 'true');
+      expect(quadrado('BBAS3')).not.toHaveAttribute('aria-current');
+      expect(screen.getByRole('list', { name: 'Ações acompanhadas' })).toHaveAccessibleDescription(
+        /Use as setas/,
+      );
+    });
+
+    it('trocar de janela e voltar não muda o destaque', () => {
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      act(() => quadrado('PETR4').focus());
+      fireEvent.keyDown(quadrado('PETR4'), { key: 'Escape' });
+
+      // Alt+Tab: o quadrado perde o foco com a janela e o recebe de volta ao voltar.
+      janelaComFoco = false;
+      fireEvent.blur(quadrado('PETR4'));
+      janelaComFoco = true;
+      fireEvent.focus(quadrado('PETR4'));
+
+      expect(destaques().ativo).toEqual([]);
     });
 
     it('focar destaca; as setas movem o foco e o destaque; Esc apaga', () => {
@@ -247,6 +348,27 @@ describe('GradeAcoes', () => {
       expect(fireEvent.keyDown(quadrado('ITUB4'), { key: 'a' })).toBe(true);
     });
 
+    it('foco depois de um arraste que terminou fora da grade volta a destacar', () => {
+      const relogio = vi.spyOn(performance, 'now').mockReturnValue(1000);
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      fireEvent.pointerDown(quadrado('B3SA3'), { pointerType: 'mouse' }); // soltou fora: sem clique
+
+      relogio.mockReturnValue(5000);
+      act(() => quadrado('PETR4').focus());
+
+      expect(destaques().ativo).toEqual(['PETR4']);
+    });
+
+    it('toque cancelado pela rolagem não deixa o ponteiro preso', () => {
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      fireEvent.pointerDown(quadrado('B3SA3'), { pointerType: 'touch' });
+      fireEvent.pointerCancel(quadrado('B3SA3'), { pointerType: 'touch' });
+
+      act(() => quadrado('PETR4').focus());
+
+      expect(destaques().ativo).toEqual(['PETR4']);
+    });
+
     it('sair da grade com o Tab apaga o destaque', () => {
       render(
         <>
@@ -271,6 +393,31 @@ describe('GradeAcoes', () => {
 
       // Invertida: BBDC4 ABEV3 WEGE3 / B3SA3 ITUB4 VALE3 / PETR4 BBAS3 (vizinhos em ordem de TICKERS)
       expect(destaques()).toEqual({ ativo: ['B3SA3'], vizinhos: ['PETR4', 'ITUB4', 'BBDC4'] });
+    });
+
+    it('ação que sai e volta para a lista não traz o destaque de volta', () => {
+      const { rerender } = render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      passarMouse('B3SA3');
+
+      rerender(<GradeAcoes cotacoes={COTACOES.filter((c) => c.ticker !== 'B3SA3')} rodada={2} />);
+      rerender(<GradeAcoes cotacoes={COTACOES} rodada={3} />);
+
+      expect(destaques().ativo).toEqual([]);
+    });
+
+    it('funciona igual no StrictMode (efeitos montados duas vezes)', () => {
+      temHover = false;
+      render(
+        <StrictMode>
+          <GradeAcoes cotacoes={COTACOES} rodada={1} />
+        </StrictMode>,
+      );
+
+      tocar(quadrado('B3SA3'));
+      expect(destaques().ativo).toEqual(['B3SA3']);
+      colunasDoLayout = '150px 150px';
+      act(() => avisarRedimensionamento());
+      expect(destaques().vizinhos).toEqual(['VALE3', 'WEGE3', 'ABEV3']);
     });
 
     it('ação que sai da lista leva o destaque junto', () => {

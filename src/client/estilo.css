@@ -11,7 +11,6 @@
   --atencao-fundo: #fdf3dc;
   --sombra: 0 1px 2px rgb(0 0 0 / 6%);
   --destaque: #c2571a;
-  --destaque-suave: #fbeee5;
   --sombra-ativo: 0 6px 18px rgb(0 0 0 / 12%);
   color-scheme: light;
   font-family:
@@ -37,7 +36,6 @@
     --atencao-fundo: #382e1a;
     --sombra: none;
     --destaque: #e8844a;
-    --destaque-suave: #3a2a1f;
     --sombra-ativo: 0 6px 18px rgb(0 0 0 / 45%);
     color-scheme: dark;
   }
@@ -95,6 +93,16 @@ body {
 
 .principal {
   flex: 1;
+}
+
+/* Texto só para leitores de tela. */
+.apenas-leitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .vazio {
@@ -164,20 +172,29 @@ body {
 }
 
 .quadrado:focus-visible {
+  z-index: 1;
   outline: 2px solid var(--destaque);
   outline-offset: 3px;
 }
 
+/* O anel do ativo já mostra onde está o foco. */
+.quadrado-ativo:focus-visible {
+  outline: none;
+}
+
+/* Por cima dos vizinhos, para a sombra não ficar escondida atrás deles. */
 .quadrado-ativo {
+  z-index: 1;
   border-color: var(--destaque);
+  background: color-mix(in srgb, var(--destaque) 20%, var(--superficie));
   box-shadow:
     0 0 0 2px var(--destaque),
     var(--sombra-ativo);
 }
 
 .quadrado-vizinho {
-  border-color: color-mix(in srgb, var(--destaque) 45%, var(--borda));
-  background: var(--destaque-suave);
+  border-color: color-mix(in srgb, var(--destaque) 50%, var(--borda));
+  background: color-mix(in srgb, var(--destaque) 6%, var(--superficie));
 }
 
 @media (prefers-reduced-motion: reduce) {

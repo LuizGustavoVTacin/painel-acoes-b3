@@ -43,6 +43,7 @@ export function QuadradoAcao({ cotacao, rodada, destaque = null, focavel = false
         .join(' ')}
       data-ticker={ticker}
       tabIndex={focavel ? 0 : -1}
+      aria-current={destaque === 'ativo' ? 'true' : undefined}
     >
       {semLogo ? (
         <span className="logo logo-iniciais" aria-hidden="true">
