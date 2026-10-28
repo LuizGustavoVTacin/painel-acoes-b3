@@ -1,0 +1,1473 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard B3 — Documentação</title>
+    <meta
+      name="description"
+      content="Guia de funcionalidades, regras e decisões técnicas do Dashboard B3 pessoal."
+    />
+    <link rel="stylesheet" href="estilo.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c2571a'/%3E%3Cpath d='M7 22l6-7 4 4 8-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <header class="topo">
+      <button
+        class="botao botao-menu"
+        id="botao-menu"
+        aria-controls="lateral"
+        aria-expanded="false"
+      >
+        ☰ Capítulos
+      </button>
+      <a class="marca" href="#inicio">
+        <span class="marca-icone" aria-hidden="true">↗</span>
+        <span>Dashboard B3 <small>· Documentação</small></span>
+      </a>
+      <div class="topo-acoes">
+        <button class="botao" id="botao-tema" type="button" aria-label="Alternar tema claro/escuro">
+          ◐ Tema
+        </button>
+      </div>
+    </header>
+
+    <div class="estrutura">
+      <nav class="lateral" id="lateral" aria-label="Capítulos">
+        <h2>Primeiros passos</h2>
+        <ol>
+          <li>
+            <a href="#inicio"><span class="num">01</span>Visão geral</a>
+          </li>
+          <li>
+            <a href="#comecando"><span class="num">02</span>Instalar e rodar</a>
+          </li>
+          <li>
+            <a href="#arquitetura"><span class="num">03</span>Arquitetura</a>
+          </li>
+        </ol>
+        <h2>Funcionalidades</h2>
+        <ol>
+          <li>
+            <a href="#tela"><span class="num">04</span>A tela do dashboard</a>
+          </li>
+          <li>
+            <a href="#compras"><span class="num">05</span>Compras e preço médio</a>
+          </li>
+          <li>
+            <a href="#cotacoes"><span class="num">06</span>Cotações</a>
+          </li>
+          <li>
+            <a href="#catalogo"><span class="num">07</span>Catálogo e logos</a>
+          </li>
+          <li>
+            <a href="#alertas"><span class="num">08</span>Alertas das APIs</a>
+          </li>
+        </ol>
+        <h2>Referência</h2>
+        <ol>
+          <li>
+            <a href="#regras"><span class="num">09</span>Regras de negócio</a>
+          </li>
+          <li>
+            <a href="#api"><span class="num">10</span>API local</a>
+          </li>
+          <li>
+            <a href="#banco"><span class="num">11</span>Banco de dados</a>
+          </li>
+          <li>
+            <a href="#seguranca"><span class="num">12</span>Custo zero e segurança</a>
+          </li>
+          <li>
+            <a href="#qualidade"><span class="num">13</span>Testes e qualidade</a>
+          </li>
+          <li>
+            <a href="#proximos"><span class="num">14</span>Próximas etapas</a>
+          </li>
+          <li>
+            <a href="#glossario"><span class="num">15</span>Glossário</a>
+          </li>
+        </ol>
+      </nav>
+
+      <main class="conteudo">
+        <!-- 01 -->
+        <section id="inicio">
+          <span class="capitulo">Capítulo 01 · Visão geral</span>
+          <h1>Acompanhe suas ações da B3 sem pagar nada</h1>
+          <p class="resumo">
+            Um dashboard pessoal que roda só no seu computador: mostra o preço das ações que você
+            escolher e quanto cada compra está rendendo, usando apenas fontes de dados gratuitas e
+            sem cadastro.
+          </p>
+
+          <div class="cartoes">
+            <div class="cartao">
+              <span class="icone" aria-hidden="true">▦</span>
+              <h4>Grade de ações</h4>
+              <p>Quadrados iguais com logo, código e preço atual. Até 50 ações.</p>
+            </div>
+            <div class="cartao">
+              <span class="icone" aria-hidden="true">⟳</span>
+              <h4>Cotações automáticas</h4>
+              <p>
+                Yahoo Finance como fonte principal e brapi como reserva, a cada 5 min no pregão.
+              </p>
+            </div>
+            <div class="cartao">
+              <span class="icone" aria-hidden="true">↗</span>
+              <h4>Ganho ou perda</h4>
+              <p>Preço médio das suas compras e seta verde ou vermelha com o percentual.</p>
+            </div>
+            <div class="cartao">
+              <span class="icone" aria-hidden="true">⚑</span>
+              <h4>Nunca quebra</h4>
+              <p>Se uma API falhar ou pedir pagamento, o app avisa e mantém o último preço.</p>
+            </div>
+          </div>
+
+          <h3>Onde o projeto está</h3>
+          <p>
+            O desenvolvimento segue etapas curtas. Cada uma passa por plano, implementação com
+            testes, revisão independente e correções antes de ser dada como concluída.
+          </p>
+          <ol class="etapas">
+            <li class="feita">
+              <strong>Esqueleto do projeto</strong>
+              <span>React + Vite, servidor Express, testes, lint e build.</span>
+            </li>
+            <li class="feita">
+              <strong>Regras de negócio</strong>
+              <span>Dinheiro em centavos, preço médio, variação, datas e códigos da B3.</span>
+            </li>
+            <li class="feita">
+              <strong>Banco de dados e API local</strong>
+              <span>SQLite com compras, ações escolhidas e uso das APIs.</span>
+            </li>
+            <li class="feita">
+              <strong>Catálogo, logos e alertas (4a) · Cotações do Yahoo (4b)</strong>
+              <span>Fontes gratuitas, reserva automática e monitoramento das APIs.</span>
+            </li>
+            <li>
+              <strong>Grade na tela e rodapé</strong>
+              <span>Quadrados, atualização a cada 5 min, fonte em uso e avisos.</span>
+            </li>
+            <li>
+              <strong>Destaque dos vizinhos</strong>
+              <span>Mouse, toque e teclado.</span>
+            </li>
+            <li>
+              <strong>Menu e escolha das ações</strong>
+              <span>Lista com caixas de seleção e limite de 50.</span>
+            </li>
+            <li>
+              <strong>Tela de compras</strong>
+              <span>Cadastrar, editar e excluir.</span>
+            </li>
+            <li>
+              <strong>Setas de ganho e perda</strong>
+              <span>Preço atual comparado ao preço médio.</span>
+            </li>
+            <li>
+              <strong>Iniciar com dois cliques</strong>
+              <span><code>iniciar.bat</code>, guia de uso e teste ponta a ponta.</span>
+            </li>
+          </ol>
+
+          <div class="aviso aviso-dica">
+            <span aria-hidden="true">ℹ</span>
+            <p>
+              Hoje o servidor e toda a lógica estão prontos e testados; a interface visual (grade,
+              menu, formulários) chega a partir da etapa 5. Os capítulos marcam o que já existe com
+              <span class="etiqueta etiqueta-feito">pronto</span> e o que vem depois com
+              <span class="etiqueta etiqueta-pendente">próximas etapas</span>.
+            </p>
+          </div>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a class="proximo" href="#comecando"><small>Próximo</small>Instalar e rodar →</a>
+          </nav>
+        </section>
+
+        <!-- 02 -->
+        <section id="comecando">
+          <span class="capitulo">Capítulo 02 · Primeiros passos</span>
+          <h2 class="titulo">Instalar e rodar</h2>
+          <p class="resumo">
+            Tudo roda no próprio Windows, sem hospedagem e sem banco para instalar.
+          </p>
+
+          <h3>O que você precisa</h3>
+          <ul>
+            <li>
+              <strong>Node.js 24</strong> ou mais novo (o banco embutido do Node exige essa versão).
+            </li>
+            <li>Nada mais: o SQLite já vem dentro do Node, e nenhuma API pede chave.</li>
+          </ul>
+
+          <h3>Passo a passo</h3>
+          <ol class="passos">
+            <li>
+              Instale as dependências na pasta do projeto:
+              <pre><code>npm install</code></pre>
+            </li>
+            <li>
+              (Opcional) Copie <code>.env.example</code> para <code>.env</code> para mudar a porta
+              ou o arquivo do banco. Sem isso, valem os padrões.
+            </li>
+            <li>
+              Gere a versão final e inicie o servidor:
+              <pre><code>npm run build
+npm start</code></pre>
+            </li>
+            <li>Abra <a href="http://localhost:3000">http://localhost:3000</a> no navegador.</li>
+          </ol>
+
+          <h3>Comandos</h3>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Comando</th>
+                  <th>O que faz</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>npm run dev</code></td>
+                  <td>
+                    Modo de desenvolvimento: tela (Vite) e servidor recarregam sozinhos ao salvar.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>npm test</code></td>
+                  <td>Roda todos os testes automáticos.</td>
+                </tr>
+                <tr>
+                  <td><code>npm run lint</code></td>
+                  <td>Confere estilo e erros comuns (ESLint + Prettier).</td>
+                </tr>
+                <tr>
+                  <td><code>npm run build</code></td>
+                  <td>Confere os tipos e gera a versão final em <code>dist/</code>.</td>
+                </tr>
+                <tr>
+                  <td><code>npm start</code></td>
+                  <td>Serve a versão final em <code>http://localhost:3000</code>.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Configuração (<code>.env</code>)</h3>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Variável</th>
+                  <th>Padrão</th>
+                  <th>Para quê</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>PORT</code></td>
+                  <td><code>3000</code></td>
+                  <td>Porta do servidor local.</td>
+                </tr>
+                <tr>
+                  <td><code>DB_ARQUIVO</code></td>
+                  <td><code>dados.db</code></td>
+                  <td>Arquivo do banco (caminho absoluto ou relativo à pasta do projeto).</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="aviso aviso-regra">
+            <span aria-hidden="true">⛔</span>
+            <p>
+              <strong>Não existe variável de chave de API — de propósito.</strong>
+              O app só usa fontes gratuitas e sem cadastro. Veja o capítulo
+              <a href="#seguranca">Custo zero e segurança</a>.
+            </p>
+          </div>
+
+          <div class="aviso aviso-atencao">
+            <span aria-hidden="true">⚠</span>
+            <p>
+              <strong>Porta ocupada?</strong> Se aparecer “A porta 3000 já está em uso. O dashboard
+              já está aberto?”, o app provavelmente já está rodando em outra janela.
+            </p>
+          </div>
+
+          <h3>Estrutura de pastas</h3>
+          <pre><code>src/
+├── client/      Tela (React)
+├── server/      Servidor Express, banco e APIs externas
+│   ├── banco/     conexão, migrações e repositórios SQLite
+│   ├── externo/   Yahoo, brapi, regras de acesso e estado das APIs
+│   └── testes/    respostas falsas usadas só nos testes
+└── shared/      Regras usadas pela tela e pelo servidor
+docs/            Esta documentação</code></pre>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#inicio"><small>Anterior</small>← Visão geral</a>
+            <a class="proximo" href="#arquitetura"><small>Próximo</small>Arquitetura →</a>
+          </nav>
+        </section>
+
+        <!-- 03 -->
+        <section id="arquitetura">
+          <span class="capitulo">Capítulo 03 · Primeiros passos</span>
+          <h2 class="titulo">Arquitetura</h2>
+          <p class="resumo">
+            Um único programa Node serve a tela, guarda os dados e conversa com as APIs de cotação.
+          </p>
+
+          <div
+            class="diagrama"
+            role="img"
+            aria-label="Navegador conversa com o servidor local, que usa o banco SQLite e chama Yahoo e brapi por uma única porta de saída"
+          >
+            <div class="diagrama-linha">
+              <div class="caixa"><strong>Navegador</strong><small>React + Vite</small></div>
+            </div>
+            <div class="seta">↓ ↑ http://localhost:3000/api/…</div>
+            <div class="diagrama-linha">
+              <div class="caixa">
+                <strong>Servidor Express</strong><small>rotas, regras, cache</small>
+              </div>
+              <div class="caixa"><strong>SQLite</strong><small>dados.db (node:sqlite)</small></div>
+            </div>
+            <div class="seta">↓ única saída para a internet: <code>requisitarExterno</code></div>
+            <div class="diagrama-linha">
+              <div class="caixa caixa-externa">
+                <strong>Yahoo Finance</strong><small>cotações (principal)</small>
+              </div>
+              <div class="caixa caixa-externa">
+                <strong>brapi</strong><small>catálogo, logos e reserva</small>
+              </div>
+            </div>
+          </div>
+
+          <h3>Por que assim</h3>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Escolha</th>
+                  <th>Motivo</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Node.js + TypeScript em tudo</td>
+                  <td>Uma linguagem só; tipos evitam erros com dinheiro e datas.</td>
+                </tr>
+                <tr>
+                  <td>React + Vite</td>
+                  <td>Tela rápida de desenvolver e testar.</td>
+                </tr>
+                <tr>
+                  <td>Express</td>
+                  <td>Guarda as regras de acesso às APIs, faz cache e serve a tela pronta.</td>
+                </tr>
+                <tr>
+                  <td>SQLite embutido no Node 24</td>
+                  <td>Um arquivo, nada para instalar, sem dependência nativa.</td>
+                </tr>
+                <tr>
+                  <td>Regras em <code>src/shared</code></td>
+                  <td>Mesmo cálculo na tela e no servidor, testado uma vez.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#comecando"><small>Anterior</small>← Instalar e rodar</a>
+            <a class="proximo" href="#tela"><small>Próximo</small>A tela do dashboard →</a>
+          </nav>
+        </section>
+
+        <!-- 04 -->
+        <section id="tela">
+          <span class="capitulo">Capítulo 04 · Funcionalidades</span>
+          <h2 class="titulo">
+            A tela do dashboard <span class="etiqueta etiqueta-pendente">próximas etapas</span>
+          </h2>
+          <p class="resumo">Como a tela vai se comportar, conforme as decisões já aprovadas.</p>
+
+          <h3>Os quadrados</h3>
+          <p>
+            Cada ação escolhida vira um quadrado do mesmo tamanho, com logo, código e preço atual:
+          </p>
+          <div class="quadrado-exemplo" aria-label="Exemplos de quadrados">
+            <div class="quadrado">
+              <span class="logo">BB</span><b>BBAS3</b><span class="preco">R$ 17,38</span>
+              <span class="alta">▲ +4,21%</span>
+            </div>
+            <div class="quadrado">
+              <span class="logo">PB</span><b>PETR4</b><span class="preco">R$ 52,79</span>
+              <span class="baixa">▼ −2,10%</span>
+            </div>
+            <div class="quadrado">
+              <span class="logo">B3</span><b>B3SA3</b><span class="preco">R$ 15,40</span>
+              <span class="neutra">sem compras</span>
+            </div>
+          </div>
+          <ul>
+            <li>
+              <strong>Seta verde</strong> com % de ganho quando o preço atual está acima do seu
+              preço médio.
+            </li>
+            <li><strong>Seta vermelha</strong> com % de perda quando está abaixo.</li>
+            <li><strong>Exatamente igual</strong>: mostra 0,00% sem seta.</li>
+            <li><strong>Sem compras</strong> registradas: só o preço.</li>
+          </ul>
+
+          <h3>Telas menores</h3>
+          <p>
+            A grade usa CSS Grid com <code>auto-fill</code>: em telas menores cabem menos colunas e
+            as demais ações ficam acessíveis rolando a página. Os quadrados continuam quadrados.
+          </p>
+
+          <h3>Destaque dos vizinhos</h3>
+          <p>
+            O quadrado ativo ganha destaque forte e os 4 vizinhos (acima, abaixo, esquerda e
+            direita) um destaque suave. O número de colunas é lido do layout real, e o cálculo dos
+            vizinhos é uma função pura testada.
+          </p>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Dispositivo</th>
+                  <th>Como ativa</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Mouse</td>
+                  <td>Passar o mouse (só em telas com <code>hover</code>).</td>
+                </tr>
+                <tr>
+                  <td>Toque</td>
+                  <td>Um toque liga ou desliga o destaque.</td>
+                </tr>
+                <tr>
+                  <td>Teclado</td>
+                  <td>Foco com <kbd>Tab</kbd> e navegação com as setas.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Menu e rodapé</h3>
+          <ul>
+            <li>
+              Menu no canto superior direito: escolher ações (caixas de seleção, máximo de 50 — as
+              demais ficam desabilitadas ao atingir o limite) e registrar compras.
+            </li>
+            <li>
+              Rodapé: horário da última atualização, qual API está em uso e avisos quando uma API
+              estiver indisponível, pedir pagamento ou mudar de formato.
+            </li>
+          </ul>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#arquitetura"><small>Anterior</small>← Arquitetura</a>
+            <a class="proximo" href="#compras"><small>Próximo</small>Compras e preço médio →</a>
+          </nav>
+        </section>
+
+        <!-- 05 -->
+        <section id="compras">
+          <span class="capitulo">Capítulo 05 · Funcionalidades</span>
+          <h2 class="titulo">
+            Compras e preço médio <span class="etiqueta etiqueta-feito">pronto no servidor</span>
+          </h2>
+          <p class="resumo">
+            Cada compra fica registrada no banco local e pode ser editada ou excluída.
+          </p>
+
+          <h3>O que é guardado</h3>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Campo</th>
+                  <th>Regra</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Código (ticker)</td>
+                  <td>
+                    Formato da B3, como <code>BBAS3</code>, <code>TAEE11</code> ou
+                    <code>B3SA3</code>.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Data</td>
+                  <td>Data válida, nunca no futuro (pelo horário de Brasília).</td>
+                </tr>
+                <tr>
+                  <td>Quantidade</td>
+                  <td>Inteiro de 1 a 1.000.000.000.</td>
+                </tr>
+                <tr>
+                  <td>Preço unitário</td>
+                  <td>Maior que zero, até R$ 1.000.000,00.</td>
+                </tr>
+                <tr>
+                  <td>Taxas</td>
+                  <td>Zero ou mais, até R$ 1.000.000,00.</td>
+                </tr>
+                <tr>
+                  <td>Plataforma</td>
+                  <td>
+                    Texto de 1 a 40 caracteres (ex.: Itaú Íon, BTG), sem caracteres invisíveis ou de
+                    controle.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            O valor total de uma compra (quantidade × preço + taxas) não pode passar de R$ 100
+            bilhões.
+          </p>
+
+          <h3>Como o preço médio é calculado</h3>
+          <pre><code>preço médio = (soma de quantidade × preço unitário + soma das taxas) ÷ quantidade total</code></pre>
+          <p><strong>Exemplo:</strong> duas compras de BBAS3.</p>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Compra</th>
+                  <th>Quantidade</th>
+                  <th>Preço</th>
+                  <th>Taxas</th>
+                  <th>Valor pago</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1ª</td>
+                  <td>100</td>
+                  <td>R$ 16,00</td>
+                  <td>R$ 4,90</td>
+                  <td>R$ 1.604,90</td>
+                </tr>
+                <tr>
+                  <td>2ª</td>
+                  <td>50</td>
+                  <td>R$ 18,00</td>
+                  <td>R$ 4,90</td>
+                  <td>R$ 904,90</td>
+                </tr>
+                <tr>
+                  <td><strong>Total</strong></td>
+                  <td><strong>150</strong></td>
+                  <td></td>
+                  <td></td>
+                  <td><strong>R$ 2.509,80</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Preço médio = R$ 2.509,80 ÷ 150 = <strong>R$ 16,73</strong>. Com a ação a R$ 17,38, a
+            variação é (17,38 × 150 − 2.509,80) ÷ 2.509,80 = <span class="alta">▲ +3,87%</span>.
+          </p>
+
+          <div class="aviso aviso-dica">
+            <span aria-hidden="true">ℹ</span>
+            <p>
+              A variação é calculada sobre o <strong>custo total exato</strong>, não sobre o preço
+              médio arredondado. Assim, centavos de arredondamento nunca mudam a cor da seta.
+            </p>
+          </div>
+
+          <div class="aviso aviso-atencao">
+            <span aria-hidden="true">⚠</span>
+            <p>
+              Vendas estão fora do escopo: o app registra apenas compras. Se uma ação tiver dados
+              problemáticos, só ela fica sem posição — as demais continuam funcionando.
+            </p>
+          </div>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#tela"><small>Anterior</small>← A tela do dashboard</a>
+            <a class="proximo" href="#cotacoes"><small>Próximo</small>Cotações →</a>
+          </nav>
+        </section>
+
+        <!-- 06 -->
+        <section id="cotacoes">
+          <span class="capitulo">Capítulo 06 · Funcionalidades</span>
+          <h2 class="titulo">
+            Cotações <span class="etiqueta etiqueta-feito">pronto no servidor</span>
+          </h2>
+          <p class="resumo">
+            De onde vêm os preços, com que frequência são atualizados e o que acontece quando algo
+            falha.
+          </p>
+
+          <h3>As fontes</h3>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fonte</th>
+                  <th>Papel</th>
+                  <th>Detalhes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Yahoo Finance</strong><br /><code>v7/finance/spark</code></td>
+                  <td>Principal</td>
+                  <td>
+                    Sem chave, conta, cookie ou “crumb”. Até 20 ações por chamada (limite do Yahoo):
+                    50 ações = 3 chamadas. Envia só <code>User-Agent: Mozilla/5.0</code>, que o
+                    Yahoo exige.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>brapi</strong><br /><code>/api/quote/list</code></td>
+                  <td>Reserva</td>
+                  <td>
+                    Listagem pública sem chave: uma chamada traz todas as ações com nome, logo e
+                    último preço. No máximo a cada 15 minutos.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Banco local</strong></td>
+                  <td>Último recurso</td>
+                  <td>
+                    O último preço conhecido de cada ação fica salvo e aparece marcado como
+                    desatualizado.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Ritmo de atualização</h3>
+          <p>
+            O horário do pregão vem do próprio Yahoo, então feriados não precisam de calendário. O
+            ritmo de cada ação depende da situação do pregão:
+          </p>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Situação</th>
+                  <th>Quando</th>
+                  <th>Atualiza a cada</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Aberto</strong></td>
+                  <td>Pregão regular (hoje, 10h às 17h)</td>
+                  <td>5 minutos</td>
+                </tr>
+                <tr>
+                  <td><strong>Leilão</strong></td>
+                  <td>Até 30 min após o fim — quando sai o preço de fechamento (~17h10)</td>
+                  <td>5 minutos</td>
+                </tr>
+                <tr>
+                  <td><strong>Desconhecido</strong></td>
+                  <td>
+                    Dia útil no horário de pregão (a partir de 1 h antes), mas o Yahoo ainda não
+                    confirmou o pregão do dia — início da manhã ou feriado
+                  </td>
+                  <td>15 minutos (5 nos primeiros 30 min após a abertura prevista)</td>
+                </tr>
+                <tr>
+                  <td><strong>Fechado</strong></td>
+                  <td>Noite e fim de semana</td>
+                  <td>1 hora</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Além disso, há duas buscas obrigatórias por dia:</p>
+          <ul>
+            <li>
+              <strong>Fim do leilão</strong> (30 min após o fechamento): garante o preço de
+              fechamento definitivo.
+            </li>
+            <li><strong>Abertura prevista</strong>: descobre logo o pregão do dia.</li>
+          </ul>
+
+          <div class="aviso aviso-dica">
+            <span aria-hidden="true">ℹ</span>
+            <p>
+              As buscas só acontecem quando a tela pede cotações. Com o app fechado, nenhuma chamada
+              sai do seu computador.
+            </p>
+          </div>
+
+          <h3>Ações recém-marcadas e pedidos simultâneos</h3>
+          <ul>
+            <li>Uma ação nova é buscada na hora, sem repetir as que já estão em dia.</li>
+            <li>
+              As rodadas de chamadas ao Yahoo acontecem <strong>uma de cada vez</strong>; pedidos
+              que chegam durante uma rodada entram juntos na próxima.
+            </li>
+            <li>Há pelo menos <strong>5 segundos</strong> entre rodadas que chamaram o Yahoo.</li>
+            <li>
+              A rota de cotações espera no máximo <strong>8 segundos</strong> e então responde com
+              os dados salvos; a busca termina sozinha e vale para o próximo pedido.
+            </li>
+          </ul>
+
+          <h3>Quando o Yahoo não responde</h3>
+          <ol class="passos">
+            <li>
+              O app continua mostrando o último preço do Yahoo, marcado como desatualizado depois de
+              perder duas atualizações.
+            </li>
+            <li>
+              Depois de <strong>30 minutos</strong> sem atualizar, entra o preço da brapi — nunca um
+              preço da brapi mais antigo que o do Yahoo. Isso evita que a fonte fique alternando a
+              cada falha curta.
+            </li>
+            <li>
+              Ações que o Yahoo não conhece (ex.: <code>ELET3</code>, que virou <code>AXIA3</code>)
+              usam a brapi direto e aparecem em “sem cotação no Yahoo”.
+            </li>
+            <li>
+              Sem nenhuma fonte, fica o último preço salvo. Se nunca houve preço, a ação aparece sem
+              preço.
+            </li>
+          </ol>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#compras"><small>Anterior</small>← Compras e preço médio</a>
+            <a class="proximo" href="#catalogo"><small>Próximo</small>Catálogo e logos →</a>
+          </nav>
+        </section>
+
+        <!-- 07 -->
+        <section id="catalogo">
+          <span class="capitulo">Capítulo 07 · Funcionalidades</span>
+          <h2 class="titulo">
+            Catálogo e logos <span class="etiqueta etiqueta-feito">pronto no servidor</span>
+          </h2>
+          <p class="resumo">A lista de ações disponíveis para escolher e as imagens dos logos.</p>
+
+          <h3>Catálogo</h3>
+          <ul>
+            <li>
+              Vem da listagem pública da brapi: cerca de 380 ações (sem o mercado fracionário, como
+              <code>BBAS3F</code>).
+            </li>
+            <li>Atualizado no máximo a cada 15 minutos, só quando alguém consulta.</li>
+            <li>
+              Busca sem acentos e sem diferenciar maiúsculas: “itau” encontra “ITAÚ UNIBANCO”.
+            </li>
+            <li>Ações que saem da listagem continuam no catálogo com o último preço conhecido.</li>
+          </ul>
+
+          <h3>Logos: baixados uma vez, conferidos uma vez por dia</h3>
+          <ol class="passos">
+            <li>No primeiro pedido, o logo é baixado e salvo no banco.</li>
+            <li>Nos pedidos seguintes, sai direto do banco — nenhuma chamada externa.</li>
+            <li>
+              Uma vez por dia, o app confere se o logo mudou (ETag). Se não mudou, nada é baixado.
+            </li>
+            <li>O navegador também guarda o logo por um dia.</li>
+          </ol>
+          <ul>
+            <li>No máximo 4 downloads de logo ao mesmo tempo.</li>
+            <li>
+              Falha temporária no primeiro download: nova tentativa em 15 minutos, não no dia
+              seguinte.
+            </li>
+            <li>
+              Logo com problema próprio (grande demais, formato estranho) afeta só aquela ação; 5
+              seguidos com problema indicam mudança no servidor de logos e geram alerta.
+            </li>
+            <li>Só são aceitos SVG e PNG de até 200 KB.</li>
+          </ul>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#cotacoes"><small>Anterior</small>← Cotações</a>
+            <a class="proximo" href="#alertas"><small>Próximo</small>Alertas das APIs →</a>
+          </nav>
+        </section>
+
+        <!-- 08 -->
+        <section id="alertas">
+          <span class="capitulo">Capítulo 08 · Funcionalidades</span>
+          <h2 class="titulo">
+            Alertas das APIs <span class="etiqueta etiqueta-feito">pronto no servidor</span>
+          </h2>
+          <p class="resumo">
+            Se uma API mudar as regras — passar a cobrar, exigir cadastro ou mudar o formato —, o
+            app percebe, avisa e continua funcionando com os dados salvos.
+          </p>
+
+          <h3>As quatro situações</h3>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Situação</th>
+                  <th>Quando</th>
+                  <th>O que o app faz</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="etiqueta etiqueta-feito">ok</span></td>
+                  <td>Respondeu normalmente.</td>
+                  <td>
+                    Usa os dados. Pode mostrar um aviso (ex.: aviso de cobrança junto com dados
+                    válidos).
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-put">instável</span></td>
+                  <td>
+                    Sem internet, demora (10 s), erro 5xx, limite de requisições (429) ou acesso
+                    recusado sem sinal de cobrança.
+                  </td>
+                  <td>
+                    Tenta de novo no próximo ciclo, respeitando o tempo pedido pela API (até 24 h).
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-delete">bloqueada</span></td>
+                  <td>
+                    Pagamento exigido (402), cabeçalhos de cobrança ou mensagem pedindo chave, plano
+                    ou assinatura.
+                  </td>
+                  <td>
+                    Não chama mais por <strong>24 horas</strong>; usa a reserva ou os dados salvos.
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-delete">formato alterado</span></td>
+                  <td>A resposta não tem mais o formato esperado.</td>
+                  <td>
+                    Não chama mais por <strong>24 horas</strong>; usa a reserva ou os dados salvos.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="aviso aviso-ok">
+            <span aria-hidden="true">✓</span>
+            <p>
+              <strong>Cuidados para não dar alarme falso</strong>
+              Uma ação suspensa ou desconhecida não pausa o Yahoo; um erro 401/403 comum (ex.:
+              proteção anti-robô) não é tratado como “exige pagamento”; e nomes de empresas como
+              “Plano &amp; Plano” não disparam o alerta de cobrança.
+            </p>
+          </div>
+
+          <h3>Monitoradas separadamente</h3>
+          <ul>
+            <li><code>yahoo</code> — cotações.</li>
+            <li><code>brapi</code> — listagem (catálogo e preços de reserva).</li>
+            <li><code>brapi_icones</code> — imagens dos logos.</li>
+          </ul>
+          <p>
+            Cada chamada externa é contada por mês na tabela <code>uso_api</code>. Pequenos acertos
+            do relógio do Windows não liberam um bloqueio antes da hora.
+          </p>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#catalogo"><small>Anterior</small>← Catálogo e logos</a>
+            <a class="proximo" href="#regras"><small>Próximo</small>Regras de negócio →</a>
+          </nav>
+        </section>
+
+        <!-- 09 -->
+        <section id="regras">
+          <span class="capitulo">Capítulo 09 · Referência</span>
+          <h2 class="titulo">Regras de negócio</h2>
+          <p class="resumo">
+            As regras ficam em <code>src/shared</code> e valem igual na tela e no servidor.
+          </p>
+
+          <h3>Dinheiro</h3>
+          <ul>
+            <li>
+              Sempre guardado em <strong>centavos inteiros</strong>, nunca em número quebrado: R$
+              17,38 vira <code>1738</code>.
+            </li>
+            <li>
+              Divisões exatas com inteiros grandes (BigInt) e arredondamento “meio para longe do
+              zero”.
+            </li>
+            <li>Exibição no padrão brasileiro: <code>R$ 1.234,56</code>.</li>
+            <li>
+              Valores digitados aceitam <code>1.234,56</code>, <code>1234,5</code> ou
+              <code>1234</code>.
+            </li>
+          </ul>
+
+          <h3>Percentual</h3>
+          <p>
+            Guardado em centésimos de ponto: <code>1234</code> = 12,34%. Exibição:
+            <code>+12,34%</code>, <code>-5,67%</code> ou <code>0,00%</code>.
+          </p>
+
+          <h3>Datas e horários</h3>
+          <ul>
+            <li>
+              Datas exibidas como <code>dd/mm/aaaa</code> e guardadas como <code>aaaa-mm-dd</code>.
+            </li>
+            <li>“Hoje” sempre no horário de Brasília, independentemente do relógio do sistema.</li>
+          </ul>
+
+          <h3>Códigos de ação</h3>
+          <p>
+            Quatro caracteres (letra seguida de letras ou números) e 1 ou 2 dígitos finais:
+            <code>BBAS3</code>, <code>TAEE11</code>, <code>B3SA3</code>. Minúsculas são convertidas;
+            códigos como <code>IBOV</code> ou <code>BBAS3F</code> são recusados.
+          </p>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#alertas"><small>Anterior</small>← Alertas das APIs</a>
+            <a class="proximo" href="#api"><small>Próximo</small>API local →</a>
+          </nav>
+        </section>
+
+        <!-- 10 -->
+        <section id="api">
+          <span class="capitulo">Capítulo 10 · Referência</span>
+          <h2 class="titulo">API local</h2>
+          <p class="resumo">
+            Rotas do servidor em <code>http://localhost:3000/api</code>. Respondem só a pedidos do
+            próprio computador e sempre em JSON (exceto os logos).
+          </p>
+
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Método</th>
+                  <th>Rota</th>
+                  <th>O que faz</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="etiqueta etiqueta-get">GET</span></td>
+                  <td><code>/api/saude</code></td>
+                  <td>Confirma que o servidor está no ar.</td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-get">GET</span></td>
+                  <td><code>/api/cotacoes</code></td>
+                  <td>Cotações das ações escolhidas, fonte de cada uma e estado das APIs.</td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-get">GET</span></td>
+                  <td><code>/api/selecao</code></td>
+                  <td>Ações escolhidas e o limite (50).</td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-put">PUT</span></td>
+                  <td><code>/api/selecao</code></td>
+                  <td>Troca a seleção inteira de uma vez.</td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-get">GET</span></td>
+                  <td><code>/api/transacoes</code></td>
+                  <td>Lista as compras (filtro opcional <code>?ticker=</code>).</td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-post">POST</span></td>
+                  <td><code>/api/transacoes</code></td>
+                  <td>Registra uma compra.</td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-put">PUT</span></td>
+                  <td><code>/api/transacoes/:id</code></td>
+                  <td>Edita uma compra.</td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-delete">DELETE</span></td>
+                  <td><code>/api/transacoes/:id</code></td>
+                  <td>Exclui uma compra.</td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-get">GET</span></td>
+                  <td><code>/api/posicoes</code></td>
+                  <td>Quantidade, custo total e preço médio por ação.</td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-get">GET</span></td>
+                  <td><code>/api/catalogo</code></td>
+                  <td>Ações disponíveis (busca com <code>?busca=</code>).</td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-get">GET</span></td>
+                  <td><code>/api/logos/:ticker</code></td>
+                  <td>Imagem do logo (guardada por 1 dia no navegador).</td>
+                </tr>
+                <tr>
+                  <td><span class="etiqueta etiqueta-get">GET</span></td>
+                  <td><code>/api/fontes</code></td>
+                  <td>Situação de cada API externa.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Exemplo: registrar uma compra</h3>
+          <p>Valores em centavos e data no formato <code>aaaa-mm-dd</code>.</p>
+          <span class="rotulo-codigo">POST /api/transacoes</span>
+          <pre><code>{
+  "ticker": "BBAS3",
+  "data": "2026-10-20",
+  "quantidade": 100,
+  "precoUnitario": 1600,
+  "taxas": 490,
+  "plataforma": "Itaú Íon"
+}</code></pre>
+          <p>
+            Resposta <code>201</code> com a compra criada. Se algum campo estiver errado, a resposta
+            é <code>400</code> com a mensagem de cada campo:
+          </p>
+          <pre><code>{
+  "erro": "Verifique os campos destacados",
+  "campos": { "data": "A data da compra não pode ser no futuro" }
+}</code></pre>
+
+          <h3>Exemplo: cotações</h3>
+          <span class="rotulo-codigo">GET /api/cotacoes</span>
+          <pre><code>{
+  "cotacoes": [
+    {
+      "ticker": "BBAS3",
+      "precoCentavos": 1738,
+      "fonte": "yahoo",
+      "negociadoEm": "2026-10-27T20:10:16.000Z",
+      "atualizadoEm": "2026-10-28T02:44:12.879Z",
+      "desatualizada": false
+    },
+    { "ticker": "ELET3", "precoCentavos": null, "fonte": null, … }
+  ],
+  "mercadoAberto": false,
+  "fontesEmUso": ["yahoo"],
+  "semCotacaoNoYahoo": ["ELET3"],
+  "fontes": [{ "provedor": "yahoo", "situacao": "ok", … }]
+}</code></pre>
+          <div class="aviso aviso-dica">
+            <span aria-hidden="true">ℹ</span>
+            <p>
+              <code>mercadoAberto</code> vale <code>null</code> quando o pregão do dia ainda não foi
+              confirmado pelo Yahoo (início da manhã ou feriado).
+            </p>
+          </div>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#regras"><small>Anterior</small>← Regras de negócio</a>
+            <a class="proximo" href="#banco"><small>Próximo</small>Banco de dados →</a>
+          </nav>
+        </section>
+
+        <!-- 11 -->
+        <section id="banco">
+          <span class="capitulo">Capítulo 11 · Referência</span>
+          <h2 class="titulo">Banco de dados</h2>
+          <p class="resumo">
+            Um arquivo SQLite (<code>dados.db</code>) que sobrevive ao fechar o navegador e o app.
+          </p>
+
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tabela</th>
+                  <th>Guarda</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>transacoes</code></td>
+                  <td>Compras: ticker, data, quantidade, preço e taxas em centavos, plataforma.</td>
+                </tr>
+                <tr>
+                  <td><code>acoes_selecionadas</code></td>
+                  <td>Ações exibidas, na ordem escolhida (o banco recusa mais de 50).</td>
+                </tr>
+                <tr>
+                  <td><code>catalogo</code></td>
+                  <td>Ações da brapi com nome, endereço do logo e último preço.</td>
+                </tr>
+                <tr>
+                  <td><code>logos</code></td>
+                  <td>Imagem do logo, tipo, ETag e quando foi conferido.</td>
+                </tr>
+                <tr>
+                  <td><code>cotacoes</code></td>
+                  <td>Último preço de cada ação, fonte, horário da negociação e da atualização.</td>
+                </tr>
+                <tr>
+                  <td><code>pregao</code></td>
+                  <td>Horário do pregão mais recente informado pelo Yahoo.</td>
+                </tr>
+                <tr>
+                  <td><code>estado_api</code></td>
+                  <td>Situação de cada API, desde quando e quando tentar de novo.</td>
+                </tr>
+                <tr>
+                  <td><code>uso_api</code></td>
+                  <td>Quantas chamadas cada API recebeu por mês.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Proteções</h3>
+          <ul>
+            <li>
+              Regras no próprio banco (tipos estritos e verificações): preço zero, ticker inválido
+              ou data impossível são recusados mesmo que algo escape da validação.
+            </li>
+            <li>
+              Antes de atualizar a estrutura de um banco existente, uma cópia de segurança é criada
+              (<code>dados.db.bak-v…</code>).
+            </li>
+            <li>Atualizações de estrutura acontecem numa única transação: ou tudo, ou nada.</li>
+            <li>Ao fechar o app, o banco é gravado por completo antes de encerrar.</li>
+          </ul>
+          <div class="aviso aviso-atencao">
+            <span aria-hidden="true">⚠</span>
+            <p>O banco, as cópias de segurança e o <code>.env</code> nunca vão para o git.</p>
+          </div>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#api"><small>Anterior</small>← API local</a>
+            <a class="proximo" href="#seguranca"><small>Próximo</small>Custo zero e segurança →</a>
+          </nav>
+        </section>
+
+        <!-- 12 -->
+        <section id="seguranca">
+          <span class="capitulo">Capítulo 12 · Referência</span>
+          <h2 class="titulo">Custo zero e segurança</h2>
+          <p class="resumo">
+            A garantia de nunca pagar por uma API está no código, não só na intenção.
+          </p>
+
+          <div class="aviso aviso-regra">
+            <span aria-hidden="true">⛔</span>
+            <p>
+              <strong>Regra absoluta</strong>
+              Nunca usar API que exija chave, conta, plano ou pagamento. Nenhuma chave no código, no
+              <code>.env</code> ou nas requisições.
+            </p>
+          </div>
+
+          <h3>Como o código garante isso</h3>
+          <p>
+            Toda chamada à internet passa por uma única função, <code>requisitarExterno</code>, que:
+          </p>
+          <ul>
+            <li>
+              só aceita <strong>HTTPS</strong> e uma lista fechada de endereços:
+              <code>brapi.dev</code>, <code>icons.brapi.dev</code> e
+              <code>query1.finance.yahoo.com</code>;
+            </li>
+            <li>
+              só aceita os parâmetros previstos para cada endereço — um parâmetro de chave não
+              consegue nem ser montado;
+            </li>
+            <li>recusa cabeçalhos de autenticação e cookies;</li>
+            <li>
+              não segue redirecionamentos, limita o tamanho da resposta e desiste após 10 segundos.
+            </li>
+          </ul>
+
+          <h3>Proteção do servidor local</h3>
+          <ul>
+            <li>
+              O servidor escuta só em <code>127.0.0.1</code> e recusa pedidos com outro endereço no
+              cabeçalho <code>Host</code> (proteção contra “DNS rebinding”).
+            </li>
+            <li>
+              Logos são servidos com política de conteúdo restrita: um SVG não consegue executar
+              código.
+            </li>
+            <li>
+              Erros internos nunca expõem detalhes; a resposta é só “Erro interno do servidor”.
+            </li>
+          </ul>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#banco"><small>Anterior</small>← Banco de dados</a>
+            <a class="proximo" href="#qualidade"><small>Próximo</small>Testes e qualidade →</a>
+          </nav>
+        </section>
+
+        <!-- 13 -->
+        <section id="qualidade">
+          <span class="capitulo">Capítulo 13 · Referência</span>
+          <h2 class="titulo">Testes e qualidade</h2>
+          <p class="resumo">
+            Cada etapa só termina quando testes, lint e build passam e a revisão é atendida.
+          </p>
+
+          <h3>O ciclo de cada etapa</h3>
+          <ol class="passos">
+            <li><strong>Plano</strong> apresentado e aprovado antes de qualquer código.</li>
+            <li><strong>Implementação</strong> com testes automáticos.</li>
+            <li>
+              <strong>Verificação</strong>: testes, lint, build e revisão por um agente revisor
+              independente.
+            </li>
+            <li><strong>Correções</strong> de tudo o que a revisão apontar, em até 3 rodadas.</li>
+            <li><strong>Commit</strong> com mensagem em português.</li>
+          </ol>
+
+          <div class="cartoes">
+            <div class="cartao">
+              <span class="icone" aria-hidden="true">✓</span>
+              <h4>545 testes</h4>
+              <p>Regras, banco, rotas, APIs externas e tela.</p>
+            </div>
+            <div class="cartao">
+              <span class="icone" aria-hidden="true">⛨</span>
+              <h4>Sem internet nos testes</h4>
+              <p>Respostas falsas no formato real das APIs.</p>
+            </div>
+            <div class="cartao">
+              <span class="icone" aria-hidden="true">⚗</span>
+              <h4>Testes dos testes</h4>
+              <p>Defeitos introduzidos de propósito para provar que os testes os detectam.</p>
+            </div>
+            <div class="cartao">
+              <span class="icone" aria-hidden="true">◉</span>
+              <h4>Verificação ao vivo</h4>
+              <p>Cada etapa é testada contra as APIs reais numa porta e banco temporários.</p>
+            </div>
+          </div>
+
+          <h3>Ferramentas</h3>
+          <p>
+            Vitest e Testing Library (testes), supertest (rotas), ESLint e Prettier (estilo),
+            TypeScript (tipos).
+          </p>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#seguranca"><small>Anterior</small>← Custo zero e segurança</a>
+            <a class="proximo" href="#proximos"><small>Próximo</small>Próximas etapas →</a>
+          </nav>
+        </section>
+
+        <!-- 14 -->
+        <section id="proximos">
+          <span class="capitulo">Capítulo 14 · Referência</span>
+          <h2 class="titulo">Próximas etapas e pendências</h2>
+
+          <h3>Próximas etapas</h3>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Etapa</th>
+                  <th>Entrega</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>5</td>
+                  <td>
+                    Grade de quadrados, atualização a cada 5 min e rodapé com fonte, horário e
+                    avisos.
+                  </td>
+                </tr>
+                <tr>
+                  <td>6</td>
+                  <td>Destaque do quadrado ativo e dos 4 vizinhos (mouse, toque e teclado).</td>
+                </tr>
+                <tr>
+                  <td>7</td>
+                  <td>Menu com a lista de ações e caixas de seleção (limite de 50).</td>
+                </tr>
+                <tr>
+                  <td>8</td>
+                  <td>Tela de compras: cadastrar, editar e excluir.</td>
+                </tr>
+                <tr>
+                  <td>9</td>
+                  <td>Setas de ganho e perda.</td>
+                </tr>
+                <tr>
+                  <td>10</td>
+                  <td><code>iniciar.bat</code>, guia de uso e teste ponta a ponta.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Pontos em aberto</h3>
+          <ul>
+            <li>
+              Conferir, com o pregão aberto, se o preço da listagem da brapi muda durante o dia ou
+              só no fechamento.
+            </li>
+            <li>
+              A lista de ações sem cotação no Yahoo fica em memória: esvazia ao reiniciar o app até
+              a próxima busca.
+            </li>
+            <li>
+              Se a B3 mudar o horário do pregão, os primeiros preços do primeiro dia podem atrasar
+              até 15 minutos.
+            </li>
+            <li>
+              O rodapé (etapa 5) deve ler o aviso de ações sem cotação em
+              <code>/api/cotacoes</code>.
+            </li>
+          </ul>
+
+          <h3>Fora do escopo</h3>
+          <p>Login, vendas, gráficos históricos, cotações em tempo real e hospedagem.</p>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#qualidade"><small>Anterior</small>← Testes e qualidade</a>
+            <a class="proximo" href="#glossario"><small>Próximo</small>Glossário →</a>
+          </nav>
+        </section>
+
+        <!-- 15 -->
+        <section id="glossario">
+          <span class="capitulo">Capítulo 15 · Referência</span>
+          <h2 class="titulo">Glossário</h2>
+          <div class="tabela">
+            <table>
+              <tbody>
+                <tr>
+                  <th>Ticker</th>
+                  <td>Código da ação na B3, como BBAS3.</td>
+                </tr>
+                <tr>
+                  <th>Pregão</th>
+                  <td>Período de negociação da bolsa (hoje, 10h às 17h em Brasília).</td>
+                </tr>
+                <tr>
+                  <th>Leilão de fechamento</th>
+                  <td>Minutos após o pregão em que se define o preço de fechamento.</td>
+                </tr>
+                <tr>
+                  <th>Preço médio</th>
+                  <td>Tudo o que foi pago (com taxas) dividido pela quantidade comprada.</td>
+                </tr>
+                <tr>
+                  <th>Fonte principal / reserva</th>
+                  <td>Yahoo Finance / listagem da brapi.</td>
+                </tr>
+                <tr>
+                  <th>Lote</th>
+                  <td>Grupo de até 20 ações pedidas ao Yahoo numa só chamada.</td>
+                </tr>
+                <tr>
+                  <th>Rodada</th>
+                  <td>
+                    Conjunto de lotes buscados de uma vez; só uma por vez, com pausa entre elas.
+                  </td>
+                </tr>
+                <tr>
+                  <th>ETag</th>
+                  <td>
+                    “Impressão digital” de um arquivo, usada para saber se o logo mudou sem
+                    baixá-lo.
+                  </td>
+                </tr>
+                <tr>
+                  <th>Migração</th>
+                  <td>
+                    Atualização da estrutura do banco, aplicada automaticamente ao abrir o app.
+                  </td>
+                </tr>
+                <tr>
+                  <th>Crumb</th>
+                  <td>
+                    Senha temporária que alguns endpoints do Yahoo exigem — o app usa um que não
+                    exige.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <nav class="navegacao" aria-label="Navegação entre capítulos">
+            <a href="#proximos"><small>Anterior</small>← Próximas etapas</a>
+            <a class="proximo" href="#inicio"><small>Voltar ao início</small>Visão geral ↑</a>
+          </nav>
+        </section>
+
+        <footer class="rodape">
+          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 4b.</p>
+        </footer>
+      </main>
+    </div>
+
+    <script>
+      // Tema: lembra a escolha do usuário (se o navegador permitir) e alterna claro/escuro.
+      const raiz = document.documentElement;
+      try {
+        const salvo = localStorage.getItem('tema-docs');
+        if (salvo) raiz.dataset.tema = salvo;
+      } catch {}
+      document.getElementById('botao-tema').addEventListener('click', () => {
+        const escuroAgora =
+          raiz.dataset.tema === 'escuro' ||
+          (!raiz.dataset.tema && matchMedia('(prefers-color-scheme: dark)').matches);
+        raiz.dataset.tema = escuroAgora ? 'claro' : 'escuro';
+        try {
+          localStorage.setItem('tema-docs', raiz.dataset.tema);
+        } catch {}
+      });
+
+      // Menu lateral em telas pequenas.
+      const lateral = document.getElementById('lateral');
+      const botaoMenu = document.getElementById('botao-menu');
+      botaoMenu.addEventListener('click', () => {
+        const aberta = lateral.classList.toggle('aberta');
+        botaoMenu.setAttribute('aria-expanded', String(aberta));
+      });
+      lateral.addEventListener('click', (evento) => {
+        if (evento.target.closest('a')) {
+          lateral.classList.remove('aberta');
+          botaoMenu.setAttribute('aria-expanded', 'false');
+        }
+      });
+
+      // Marca na lateral o capítulo visível.
+      const links = new Map(
+        [...lateral.querySelectorAll('a')].map((link) => [link.hash.slice(1), link]),
+      );
+      const observador = new IntersectionObserver(
+        (entradas) => {
+          for (const entrada of entradas) {
+            if (!entrada.isIntersecting) continue;
+            links.forEach((link) => link.classList.remove('ativo'));
+            links.get(entrada.target.id)?.classList.add('ativo');
+          }
+        },
+        { rootMargin: '-30% 0px -60% 0px' },
+      );
+      document.querySelectorAll('main > section').forEach((secao) => observador.observe(secao));
+    </script>
+  </body>
+</html>
