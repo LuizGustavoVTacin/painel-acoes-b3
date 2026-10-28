@@ -1,4 +1,4 @@
-import type { Centavos } from '../shared/dinheiro.js';
+import type { Cotacao, FonteCotacao, PainelCotacoes } from '../shared/painel.js';
 import type { Ticker } from '../shared/ticker.js';
 import type { Banco } from './banco/conexao.js';
 import { emTransacao } from './banco/emTransacao.js';
@@ -18,28 +18,7 @@ const IDADE_MINIMA_PARA_RESERVA_MS = 30 * 60 * 1000;
 /** Menor que o tempo máximo da rota (8 s), para uma ação recém-marcada sair na resposta. */
 export const PAUSA_ENTRE_RODADAS_YAHOO_MS = 5 * 1000;
 
-export type FonteCotacao = 'yahoo' | 'brapi';
-
-export interface Cotacao {
-  ticker: Ticker;
-  precoCentavos: Centavos | null;
-  fonte: FonteCotacao | null;
-  /** Horário da última negociação (só o Yahoo informa). */
-  negociadoEm: string | null;
-  /** Quando o preço foi obtido da API. */
-  atualizadoEm: string | null;
-  desatualizada: boolean;
-}
-
-export interface PainelCotacoes {
-  cotacoes: Cotacao[];
-  /** null quando o pregão do dia ainda não foi confirmado pelo Yahoo. */
-  mercadoAberto: boolean | null;
-  /** Fontes das cotações atuais (não desatualizadas), Yahoo primeiro. */
-  fontesEmUso: FonteCotacao[];
-  /** Ações pedidas que o Yahoo não devolveu na última tentativa (ex.: código antigo). */
-  semCotacaoNoYahoo: Ticker[];
-}
+export type { Cotacao, FonteCotacao, PainelCotacoes };
 
 interface LinhaCotacao {
   ticker: Ticker;

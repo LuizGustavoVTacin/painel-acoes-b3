@@ -1,53 +1,55 @@
-import { useEffect, useState } from 'react';
-
-type EstadoServidor = 'carregando' | 'ok' | 'indisponivel';
-
-const TEXTO_ESTADO: Record<EstadoServidor, string> = {
-  carregando: 'Servidor: verificando…',
-  ok: 'Servidor: ok',
-  indisponivel: 'Servidor indisponível',
-};
-
-export const TEMPO_LIMITE_SAUDE_MS = 5000;
+import { formatarHorario } from '../shared/datas';
+import { textoMercado, ultimaAtualizacao } from './apresentacao';
+import { QuadradoAcao } from './QuadradoAcao';
+import { Rodape } from './Rodape';
+import { useCotacoes } from './useCotacoes';
 
 interface PropsApp {
-  /** Tempo máximo de espera pela resposta de /api/saude. */
+  /** Tempo máximo de espera pela resposta de /api/cotacoes. */
   tempoLimiteMs?: number;
 }
 
-export function App({ tempoLimiteMs = TEMPO_LIMITE_SAUDE_MS }: PropsApp) {
-  const [estado, setEstado] = useState<EstadoServidor>('carregando');
+export function App({ tempoLimiteMs }: PropsApp) {
+  const { dados, erro, carregando } = useCotacoes(tempoLimiteMs);
+  const atualizadoEm = dados && ultimaAtualizacao(dados.cotacoes);
 
-  useEffect(() => {
-    const controle = new AbortController();
-    let expirou = false;
-    const temporizador = setTimeout(() => {
-      expirou = true;
-      controle.abort();
-    }, tempoLimiteMs);
-
-    fetch('/api/saude', { signal: controle.signal })
-      .then(async (resposta) => {
-        const corpo: unknown = resposta.ok ? await resposta.json() : null;
-        const ok = (corpo as { status?: unknown } | null)?.status === 'ok';
-        setEstado(ok ? 'ok' : 'indisponivel');
-      })
-      .catch(() => {
-        // Abortar por desmontagem do componente não é falha do servidor; por tempo esgotado, é.
-        if (expirou || !controle.signal.aborted) setEstado('indisponivel');
-      })
-      .finally(() => clearTimeout(temporizador));
-
-    return () => {
-      clearTimeout(temporizador);
-      controle.abort();
-    };
-  }, [tempoLimiteMs]);
+  let conteudo = null;
+  if (dados && dados.cotacoes.length === 0) {
+    conteudo = (
+      <p className="vazio">
+        Nenhuma ação selecionada. A escolha das ações pelo menu chega na próxima versão.
+      </p>
+    );
+  } else if (dados) {
+    conteudo = (
+      <ul className="grade" aria-label="Ações acompanhadas">
+        {dados.cotacoes.map((cotacao) => (
+          <QuadradoAcao key={cotacao.ticker} cotacao={cotacao} />
+        ))}
+      </ul>
+    );
+  } else if (carregando) {
+    conteudo = <p role="status">Carregando cotações…</p>;
+  }
 
   return (
-    <main>
-      <h1>Dashboard B3</h1>
-      <p role="status">{TEXTO_ESTADO[estado]}</p>
-    </main>
+    <div className="app">
+      <header className="cabecalho">
+        <h1>Dashboard B3</h1>
+        {dados && (
+          <p className="situacao">
+            <span>{textoMercado(dados.mercadoAberto)}</span>
+            {atualizadoEm && <span>Atualizado em {formatarHorario(atualizadoEm)}</span>}
+          </p>
+        )}
+      </header>
+      {erro && (
+        <p role="alert" className="erro">
+          {erro}.{dados && ' Mostrando os últimos dados recebidos.'}
+        </p>
+      )}
+      <main className="principal">{conteudo}</main>
+      {dados && <Rodape dados={dados} />}
+    </div>
   );
 }

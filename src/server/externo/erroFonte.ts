@@ -1,11 +1,6 @@
-/**
- * Situação de uma API externa:
- * - ok: respondendo normalmente;
- * - instavel: falha temporária (rede, tempo esgotado, erro 5xx, limite de requisições);
- * - bloqueada: passou a exigir chave, plano ou pagamento — nunca pagamos, então paramos de chamar;
- * - formato_alterado: respondeu, mas num formato que não reconhecemos.
- */
-export type SituacaoFonte = 'ok' | 'instavel' | 'bloqueada' | 'formato_alterado';
+import type { SituacaoFonte } from '../../shared/painel.js';
+
+export type { SituacaoFonte };
 
 export type SituacaoFalha = Exclude<SituacaoFonte, 'ok'>;
 

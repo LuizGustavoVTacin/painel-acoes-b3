@@ -1,21 +1,8 @@
 import type { Banco } from '../banco/conexao.js';
+import type { EstadoFonte, Provedor } from '../../shared/painel.js';
 import type { ErroFonte, SituacaoFonte } from './erroFonte.js';
 
-/** brapi: listagem (catálogo e preços); brapi_icones: imagens dos logos; yahoo: cotações. */
-export type Provedor = 'brapi' | 'brapi_icones' | 'yahoo';
-
-export interface EstadoFonte {
-  provedor: Provedor;
-  situacao: SituacaoFonte;
-  /** Motivo da falha, ou um aviso quando a API funciona mas algo merece atenção. */
-  mensagem: string | null;
-  /** Desde quando a API está nesta situação. */
-  desde: string;
-  ultimaTentativa: string;
-  ultimoSucesso: string | null;
-  /** Antes deste horário a API não deve ser chamada. */
-  proximaTentativa: string | null;
-}
+export type { EstadoFonte, Provedor };
 
 /** APIs bloqueadas ou com formato alterado são testadas de novo uma vez por dia. */
 export const INTERVALO_RECHECAGEM_MS = 24 * 60 * 60 * 1000;
