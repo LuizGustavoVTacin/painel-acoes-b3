@@ -1,7 +1,7 @@
 import { ehDataISO, type DataISO } from '../shared/datas.js';
+import { LIMITE_ACOES_SELECIONADAS } from '../shared/selecao.js';
 import { normalizarTicker, type Ticker } from '../shared/ticker.js';
 import type { DadosTransacao } from './banco/transacoes.js';
-import { LIMITE_ACOES_SELECIONADAS } from './banco/migracoes.js';
 import { ErroValidacao } from './erros.js';
 
 export const QUANTIDADE_MAXIMA = 1_000_000_000;

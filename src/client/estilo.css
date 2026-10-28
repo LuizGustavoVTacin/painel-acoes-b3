@@ -60,13 +60,39 @@ body {
   padding: 0 16px;
 }
 
+/* Título e menu na primeira linha; a situação do mercado vai entre eles em telas largas. */
 .cabecalho {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'titulo menu'
+    'situacao situacao';
+  align-items: center;
   gap: 4px 16px;
   padding: 16px 0;
+}
+
+.cabecalho h1 {
+  grid-area: titulo;
+}
+
+.cabecalho .situacao {
+  grid-area: situacao;
+}
+
+.cabecalho .menu {
+  grid-area: menu;
+}
+
+@media (min-width: 720px) {
+  .cabecalho {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: 'titulo situacao menu';
+  }
+
+  .cabecalho .situacao {
+    justify-content: flex-end;
+  }
 }
 
 .cabecalho h1 {
@@ -261,4 +287,162 @@ body {
 .aviso-erro {
   background: var(--erro-fundo);
   color: var(--erro);
+}
+
+/* Menu do canto superior direito. */
+button {
+  font: inherit;
+}
+
+.menu {
+  position: relative;
+}
+
+.menu-botao,
+.escolha-botoes button,
+.escolha-aviso button {
+  padding: 6px 14px;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  background: var(--superficie);
+  color: var(--texto);
+  cursor: pointer;
+}
+
+.menu-botao:hover,
+.escolha-botoes button:hover:not(:disabled) {
+  border-color: var(--destaque);
+}
+
+.menu-opcoes {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  min-width: 220px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  background: var(--superficie);
+  box-shadow: var(--sombra-ativo);
+  list-style: none;
+}
+
+.menu-opcoes button {
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--texto);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-opcoes button:hover:not(:disabled),
+.menu-opcoes button:focus-visible {
+  background: var(--superficie-2);
+}
+
+.menu-opcoes button:disabled {
+  color: var(--texto-suave);
+  cursor: default;
+}
+
+.menu-em-breve {
+  font-size: 13px;
+}
+
+/* Painel de escolha das ações: à direita em telas largas, a tela toda no celular. */
+.escolha {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(420px, 100%);
+  padding: 16px;
+  border-left: 1px solid var(--borda);
+  background: var(--superficie);
+  box-shadow: var(--sombra-ativo);
+}
+
+.escolha h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.escolha-busca {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  background: var(--fundo);
+  color: var(--texto);
+  font: inherit;
+}
+
+.escolha-contador {
+  margin: 0;
+  color: var(--texto-suave);
+  font-size: 14px;
+}
+
+.escolha-aviso {
+  margin: 0;
+}
+
+.escolha-rolagem {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.escolha-lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.escolha-item {
+  display: grid;
+  grid-template-columns: auto 64px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--borda);
+  cursor: pointer;
+}
+
+.escolha-item:has(input:disabled) {
+  color: var(--texto-suave);
+  cursor: default;
+}
+
+.escolha-nome {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.escolha-botoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.escolha-botoes .botao-principal {
+  border-color: var(--destaque);
+  background: var(--destaque);
+  color: #fff;
+}
+
+.escolha-botoes button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

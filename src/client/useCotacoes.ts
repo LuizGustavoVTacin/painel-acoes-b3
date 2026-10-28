@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RespostaCotacoes } from '../shared/painel';
 import type { Ticker } from '../shared/ticker';
 import { ESPERA_APOS_FALHA_MS, INTERVALO_ATUALIZACAO_MS, planejarProximaBusca } from './agenda';
@@ -17,6 +17,11 @@ export interface EstadoCotacoes {
   recebimentos: number;
 }
 
+export interface ControleCotacoes extends EstadoCotacoes {
+  /** Busca já (ex.: a seleção mudou); com uma busca em andamento, outra vem logo depois dela. */
+  recarregar: () => void;
+}
+
 function mensagemDeErro(erro: unknown, expirou: boolean): string {
   if (expirou) return 'O servidor do dashboard demorou demais para responder';
   if (erro instanceof ErroApi) return erro.message;
@@ -27,17 +32,20 @@ function mensagemDeErro(erro: unknown, expirou: boolean): string {
  * Busca as cotações ao abrir, de novo a cada 5 minutos (mais cedo para ações ainda sem preço)
  * e ao voltar para a aba, se a última busca já tiver mais de 5 minutos.
  */
-export function useCotacoes(tempoLimiteMs = TEMPO_LIMITE_COTACOES_MS): EstadoCotacoes {
+export function useCotacoes(tempoLimiteMs = TEMPO_LIMITE_COTACOES_MS): ControleCotacoes {
   const [estado, setEstado] = useState<EstadoCotacoes>({
     dados: null,
     erro: null,
     carregando: true,
     recebimentos: 0,
   });
+  const recarregarAgora = useRef<() => void>(() => {});
 
   useEffect(() => {
     let ativo = true;
     let buscando = false;
+    /** Pediram uma busca enquanto outra estava em andamento: a resposta dela pode ser antiga. */
+    let repetir = false;
     /** O horário da busca chegou com a aba escondida: fica para quando ela voltar. */
     let adiada = false;
     let ultimaBusca = 0;
@@ -81,6 +89,11 @@ export function useCotacoes(tempoLimiteMs = TEMPO_LIMITE_COTACOES_MS): EstadoCot
         buscando = false;
       }
       ultimaBusca = Date.now();
+      if (repetir) {
+        repetir = false;
+        void buscar();
+        return;
+      }
       proxima = setTimeout(buscarSeVisivel, esperaMs);
     }
 
@@ -106,15 +119,26 @@ export function useCotacoes(tempoLimiteMs = TEMPO_LIMITE_COTACOES_MS): EstadoCot
       }
     }
 
+    recarregarAgora.current = () => {
+      if (buscando) {
+        repetir = true;
+        return;
+      }
+      adiada = false;
+      void buscar();
+    };
+
     void buscar();
     document.addEventListener('visibilitychange', aoMudarVisibilidade);
     return () => {
       ativo = false;
+      recarregarAgora.current = () => {};
       clearTimeout(proxima);
       controle?.abort();
       document.removeEventListener('visibilitychange', aoMudarVisibilidade);
     };
   }, [tempoLimiteMs]);
 
-  return estado;
+  const recarregar = useCallback(() => recarregarAgora.current(), []);
+  return { ...estado, recarregar };
 }

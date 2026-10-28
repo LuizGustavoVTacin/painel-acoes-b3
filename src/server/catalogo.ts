@@ -1,4 +1,5 @@
 import type { Centavos } from '../shared/dinheiro.js';
+import { filtrarAcoes, type AcaoCatalogo } from '../shared/selecao.js';
 import type { Ticker } from '../shared/ticker.js';
 import type { Banco } from './banco/conexao.js';
 import { emTransacao } from './banco/emTransacao.js';
@@ -25,11 +26,6 @@ const FALHAS_DE_FORMATO_PARA_ALERTA = 5;
 const AVISO_FALHA_LOCAL = 'A brapi respondeu, mas o banco local não salvou os dados';
 const AVISO_DE_COBRANCA = `${MENSAGEM_COBRANCA} (aviso recebido junto com os dados)`;
 
-export interface AcaoCatalogo {
-  ticker: Ticker;
-  nome: string;
-}
-
 export interface PrecoCatalogo {
   precoCentavos: Centavos;
   atualizadoEm: string;
@@ -53,11 +49,6 @@ export interface DependenciasCatalogo {
   agora: () => Date;
   estado: EstadoFontes;
   uso: RepositorioUsoApi;
-}
-
-/** Remove acentos e caixa para comparar buscas: "Itaú" encontra "ITAU". */
-function simplificar(texto: string): string {
-  return texto.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 }
 
 /** Erro de regra do banco (CHECK, UNIQUE...): recusa só a linha e não desfaz a transação. */
@@ -264,13 +255,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
     garantirAtualizado,
 
     listar(busca = ''): AcaoCatalogo[] {
-      const termo = simplificar(busca.trim());
-      const acoes = listarItens.all() as unknown as AcaoCatalogo[];
-      if (!termo) return acoes;
-      return acoes.filter(
-        ({ ticker, nome }) =>
-          simplificar(ticker).includes(termo) || simplificar(nome).includes(termo),
-      );
+      return filtrarAcoes(listarItens.all() as unknown as AcaoCatalogo[], busca);
     },
 
     /** Último preço da brapi para cada ticker que tiver preço no catálogo. */

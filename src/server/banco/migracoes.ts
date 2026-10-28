@@ -1,7 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { LIMITE_ACOES_SELECIONADAS } from '../../shared/selecao.js';
 import { emTransacao } from './emTransacao.js';
-
-export const LIMITE_ACOES_SELECIONADAS = 50;
 
 const RAIZ_TICKER = '[A-Z][A-Z0-9][A-Z0-9][A-Z0-9]';
 const TICKER_VALIDO = `(ticker GLOB '${RAIZ_TICKER}[0-9]' OR ticker GLOB '${RAIZ_TICKER}[0-9][0-9]')`;

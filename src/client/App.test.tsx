@@ -376,6 +376,97 @@ describe('App', () => {
     expect(fetchFalso).toHaveBeenCalledTimes(naAbertura + 1);
     expect(quadrados()).toHaveLength(2);
   });
+
+  describe('menu de escolha das ações', () => {
+    /** Servidor com seleção de verdade: as cotações seguem o que foi salvo pelo menu. */
+    function simularServidorComSelecao(inicial: string[]) {
+      let selecao = inicial;
+      let cotacoesPendentes: (() => void) | null = null;
+      let segurarCotacoes = false;
+      const responderCotacoes = () =>
+        Response.json(resposta({ cotacoes: selecao.map((t) => cotacao(t, 1000)) }));
+      const fetchFalso = vi.fn(async (endereco: string, opcoes: RequestInit = {}) => {
+        if (endereco === '/api/catalogo') {
+          return Response.json({
+            acoes: [
+              { ticker: 'BBAS3', nome: 'Banco do Brasil' },
+              { ticker: 'VALE3', nome: 'Vale' },
+            ],
+          });
+        }
+        if (endereco === '/api/selecao') {
+          if (opcoes.method === 'PUT') {
+            selecao = (JSON.parse(opcoes.body as string) as { tickers: string[] }).tickers;
+          }
+          return Response.json({ tickers: selecao, limite: 50 });
+        }
+        if (segurarCotacoes) {
+          const antes = selecao;
+          await new Promise<void>((liberar) => (cotacoesPendentes = liberar));
+          return Response.json(resposta({ cotacoes: antes.map((t) => cotacao(t, 1000)) }));
+        }
+        return responderCotacoes();
+      });
+      vi.stubGlobal('fetch', fetchFalso);
+      const chamadasCotacoes = () =>
+        fetchFalso.mock.calls.filter(([endereco]) => endereco === '/api/cotacoes').length;
+      return {
+        chamadasCotacoes,
+        segurar: () => (segurarCotacoes = true),
+        liberar: () => {
+          segurarCotacoes = false;
+          cotacoesPendentes?.();
+        },
+      };
+    }
+
+    async function escolherESalvar(ticker: string) {
+      fireEvent.click(screen.getByRole('button', { name: 'Menu' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Escolher ações' }));
+      await avancar();
+      fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(`^${ticker}\\b`) }));
+      fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+      await avancar();
+    }
+
+    it('o menu aparece mesmo antes das cotações chegarem', () => {
+      simularServidorComSelecao([]);
+      render(<App />);
+      expect(screen.getByRole('button', { name: 'Menu' })).toBeInTheDocument();
+    });
+
+    it('salvar a seleção busca as cotações na hora e a grade muda', async () => {
+      const servidor = simularServidorComSelecao([]);
+      render(<App />);
+      await avancar();
+      expect(screen.getByText(/Abra o menu no canto superior direito/)).toBeInTheDocument();
+
+      await escolherESalvar('VALE3');
+
+      expect(servidor.chamadasCotacoes()).toBe(2);
+      expect(quadrados().map((q) => q.dataset.ticker)).toEqual(['VALE3']);
+    });
+
+    it('salvar durante uma busca em andamento busca de novo assim que ela termina', async () => {
+      const servidor = simularServidorComSelecao(['BBAS3']);
+      render(<App />);
+      await avancar();
+
+      // A busca periódica começa e fica presa com a seleção antiga.
+      servidor.segurar();
+      await avancar(INTERVALO_ATUALIZACAO_MS);
+      expect(servidor.chamadasCotacoes()).toBe(2);
+
+      await escolherESalvar('VALE3');
+      expect(servidor.chamadasCotacoes()).toBe(2);
+
+      servidor.liberar();
+      await avancar();
+
+      expect(servidor.chamadasCotacoes()).toBe(3);
+      expect(quadrados().map((q) => q.dataset.ticker)).toEqual(['BBAS3', 'VALE3']);
+    });
+  });
 });
 
 describe('LimiteDeErro', () => {

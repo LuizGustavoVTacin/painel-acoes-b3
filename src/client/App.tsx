@@ -1,6 +1,7 @@
 import { formatarHorario } from '../shared/datas';
 import { textoMercado, ultimaAtualizacao } from './apresentacao';
 import { GradeAcoes } from './GradeAcoes';
+import { MenuPrincipal } from './MenuPrincipal';
 import { Rodape } from './Rodape';
 import { useCotacoes } from './useCotacoes';
 
@@ -10,14 +11,14 @@ interface PropsApp {
 }
 
 export function App({ tempoLimiteMs }: PropsApp) {
-  const { dados, erro, carregando, recebimentos } = useCotacoes(tempoLimiteMs);
+  const { dados, erro, carregando, recebimentos, recarregar } = useCotacoes(tempoLimiteMs);
   const atualizadoEm = dados && ultimaAtualizacao(dados.cotacoes);
 
   let conteudo = null;
   if (dados && dados.cotacoes.length === 0) {
     conteudo = (
       <p className="vazio">
-        Nenhuma ação selecionada. A escolha das ações pelo menu chega na próxima versão.
+        Nenhuma ação selecionada. Abra o menu no canto superior direito e escolha as ações.
       </p>
     );
   } else if (dados) {
@@ -36,6 +37,7 @@ export function App({ tempoLimiteMs }: PropsApp) {
             {atualizadoEm && <span>Atualizado em {formatarHorario(atualizadoEm)}</span>}
           </p>
         )}
+        <MenuPrincipal aoSalvarSelecao={recarregar} />
       </header>
       {erro && (
         <p role="alert" className="erro">

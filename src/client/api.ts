@@ -6,6 +6,7 @@ import type {
   RespostaCotacoes,
   SituacaoFonte,
 } from '../shared/painel';
+import type { AcaoCatalogo } from '../shared/selecao';
 import { ehInstanteISO } from '../shared/datas';
 import { normalizarTicker, type Ticker } from '../shared/ticker';
 
@@ -119,27 +120,90 @@ export function lerRespostaCotacoes(corpo: unknown): RespostaCotacoes {
   };
 }
 
+/** Mensagem de erro que o próprio servidor local mandou ({ erro: "..." }), se houver. */
+async function mensagemDoServidor(resposta: Response): Promise<string | null> {
+  try {
+    const corpo: unknown = await resposta.json();
+    return ehObjeto(corpo) && typeof corpo.erro === 'string' ? corpo.erro : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Busca as cotações das ações selecionadas no servidor local.
- * Falhas de rede, de status e de formato viram ErroApi; o cancelamento (signal) é repassado.
+ * Faz uma requisição ao servidor local e devolve o corpo em JSON, ainda não conferido.
+ * Falhas de rede, de status e de JSON viram ErroApi; o cancelamento (signal) é repassado.
+ * Um pedido recusado (4xx) mostra o motivo dado pelo servidor.
  */
-export async function buscarCotacoes(signal: AbortSignal): Promise<RespostaCotacoes> {
+async function pedirJson(endereco: string, opcoes: RequestInit = {}): Promise<unknown> {
+  const { signal } = opcoes;
   let resposta: Response;
   try {
-    resposta = await fetch('/api/cotacoes', { signal, headers: { accept: 'application/json' } });
+    resposta = await fetch(endereco, {
+      ...opcoes,
+      headers: { accept: 'application/json', ...opcoes.headers },
+    });
   } catch (erro) {
-    if (signal.aborted) throw erro;
+    if (signal?.aborted) throw erro;
     throw new ErroApi('Não foi possível falar com o servidor do dashboard');
   }
   if (!resposta.ok) {
-    throw new ErroApi(`O servidor do dashboard respondeu com erro (${resposta.status})`);
+    const motivo = resposta.status < 500 ? await mensagemDoServidor(resposta) : null;
+    throw new ErroApi(motivo ?? `O servidor do dashboard respondeu com erro (${resposta.status})`);
   }
-  let corpo: unknown;
   try {
-    corpo = await resposta.json();
+    return await resposta.json();
   } catch (erro) {
-    if (signal.aborted) throw erro;
+    if (signal?.aborted) throw erro;
     throw formatoInvalido();
   }
-  return lerRespostaCotacoes(corpo);
+}
+
+/** Busca as cotações das ações selecionadas no servidor local. */
+export async function buscarCotacoes(signal: AbortSignal): Promise<RespostaCotacoes> {
+  return lerRespostaCotacoes(await pedirJson('/api/cotacoes', { signal }));
+}
+
+function lerAcaoCatalogo(valor: unknown): AcaoCatalogo | null {
+  if (!ehObjeto(valor) || !ehTicker(valor.ticker) || typeof valor.nome !== 'string') {
+    return descartar('catálogo', valor);
+  }
+  return { ticker: valor.ticker, nome: valor.nome };
+}
+
+/** Confere o corpo de GET /api/catalogo; uma ação inválida é descartada sozinha. */
+export function lerCatalogo(corpo: unknown): AcaoCatalogo[] {
+  if (!ehObjeto(corpo) || !Array.isArray(corpo.acoes)) throw formatoInvalido();
+  return corpo.acoes.map(lerAcaoCatalogo).filter(presente);
+}
+
+/**
+ * Confere o corpo de GET/PUT /api/selecao. Aqui nada é descartado: a lista volta ao servidor
+ * quando o usuário salva, e um código perdido no caminho sumiria da seleção sem ele pedir.
+ */
+export function lerSelecao(corpo: unknown): Ticker[] {
+  if (!ehObjeto(corpo) || !Array.isArray(corpo.tickers) || !corpo.tickers.every(ehTicker)) {
+    throw formatoInvalido();
+  }
+  return corpo.tickers;
+}
+
+/** Todas as ações que podem ser escolhidas, com o nome da empresa. */
+export async function buscarCatalogo(signal: AbortSignal): Promise<AcaoCatalogo[]> {
+  return lerCatalogo(await pedirJson('/api/catalogo', { signal }));
+}
+
+/** Ações exibidas hoje, na ordem em que foram escolhidas. */
+export async function buscarSelecao(signal: AbortSignal): Promise<Ticker[]> {
+  return lerSelecao(await pedirJson('/api/selecao', { signal }));
+}
+
+/** Troca a seleção inteira e devolve a que ficou salva no servidor. */
+export async function salvarSelecao(tickers: readonly Ticker[]): Promise<Ticker[]> {
+  const corpo = await pedirJson('/api/selecao', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tickers }),
+  });
+  return lerSelecao(corpo);
 }

@@ -1,8 +1,8 @@
 import { Router, type Response } from 'express';
 import { hojeEmBrasilia } from '../shared/datas.js';
 import { calcularPosicao, type Posicao } from '../shared/posicao.js';
+import { LIMITE_ACOES_SELECIONADAS } from '../shared/selecao.js';
 import { normalizarTicker, type Ticker } from '../shared/ticker.js';
-import { LIMITE_ACOES_SELECIONADAS } from './banco/migracoes.js';
 import type { RepositorioSelecao } from './banco/selecao.js';
 import type { RepositorioTransacoes } from './banco/transacoes.js';
 import type { ServicoCatalogo } from './catalogo.js';

@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buscarCotacoes, ErroApi, lerRespostaCotacoes } from './api';
+import {
+  buscarCatalogo,
+  buscarCotacoes,
+  buscarSelecao,
+  ErroApi,
+  lerCatalogo,
+  lerRespostaCotacoes,
+  lerSelecao,
+  salvarSelecao,
+} from './api';
 import { cotacao, fonte, resposta } from './testes/respostas';
 
 describe('lerRespostaCotacoes', () => {
@@ -135,5 +144,108 @@ describe('buscarCotacoes', () => {
     const erro = await buscarCotacoes(controle.signal).catch((e: unknown) => e);
     expect(erro).not.toBeInstanceOf(ErroApi);
     expect((erro as DOMException).name).toBe('AbortError');
+  });
+});
+
+describe('lerCatalogo', () => {
+  it('aceita as ações e ignora o endereço do logo', () => {
+    const corpo = {
+      acoes: [{ ticker: 'BBAS3', nome: 'Banco do Brasil', logo: '/api/logos/BBAS3' }],
+    };
+    expect(lerCatalogo(corpo)).toEqual([{ ticker: 'BBAS3', nome: 'Banco do Brasil' }]);
+  });
+
+  it.each([
+    ['nulo', null],
+    ['sem ações', {}],
+    ['ações fora de lista', { acoes: 'BBAS3' }],
+  ])('recusa estrutura errada: %s', (_caso, corpo) => {
+    expect(() => lerCatalogo(corpo)).toThrow(ErroApi);
+  });
+
+  it('descarta só a ação inválida', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const corpo = {
+      acoes: [
+        { ticker: 'bbas3', nome: 'Banco do Brasil' },
+        { ticker: 'VALE3', nome: null },
+        { ticker: 'PETR4', nome: 'Petrobras' },
+      ],
+    };
+    expect(lerCatalogo(corpo)).toEqual([{ ticker: 'PETR4', nome: 'Petrobras' }]);
+  });
+});
+
+describe('lerSelecao', () => {
+  it('aceita a seleção na ordem do servidor', () => {
+    expect(lerSelecao({ tickers: ['PETR4', 'BBAS3'], limite: 50 })).toEqual(['PETR4', 'BBAS3']);
+  });
+
+  it.each([
+    ['nulo', null],
+    ['sem tickers', { limite: 50 }],
+    ['um código inválido', { tickers: ['BBAS3', 'xyz'] }],
+  ])('recusa a seleção inteira: %s', (_caso, corpo) => {
+    expect(() => lerSelecao(corpo)).toThrow(ErroApi);
+  });
+});
+
+describe('catálogo e seleção no servidor', () => {
+  const sinal = () => new AbortController().signal;
+
+  it('buscarCatalogo consulta /api/catalogo', async () => {
+    const fetchFalso = vi.fn(async () =>
+      Response.json({ acoes: [{ ticker: 'BBAS3', nome: 'Banco do Brasil' }] }),
+    );
+    vi.stubGlobal('fetch', fetchFalso);
+
+    await expect(buscarCatalogo(sinal())).resolves.toEqual([
+      { ticker: 'BBAS3', nome: 'Banco do Brasil' },
+    ]);
+    expect(fetchFalso).toHaveBeenCalledWith('/api/catalogo', expect.anything());
+  });
+
+  it('buscarSelecao consulta /api/selecao', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ tickers: ['BBAS3'], limite: 50 })),
+    );
+    await expect(buscarSelecao(sinal())).resolves.toEqual(['BBAS3']);
+  });
+
+  it('salvarSelecao envia a lista com PUT e devolve a que ficou salva', async () => {
+    const fetchFalso = vi.fn(async () =>
+      Response.json({ tickers: ['PETR4', 'BBAS3'], limite: 50 }),
+    );
+    vi.stubGlobal('fetch', fetchFalso);
+
+    await expect(salvarSelecao(['PETR4', 'BBAS3'])).resolves.toEqual(['PETR4', 'BBAS3']);
+    const [endereco, opcoes] = fetchFalso.mock.calls[0] as unknown as [string, RequestInit];
+    expect(endereco).toBe('/api/selecao');
+    expect(opcoes.method).toBe('PUT');
+    expect(opcoes.headers).toMatchObject({ 'content-type': 'application/json' });
+    expect(JSON.parse(opcoes.body as string)).toEqual({ tickers: ['PETR4', 'BBAS3'] });
+  });
+
+  it('pedido recusado mostra o motivo dado pelo servidor', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ erro: 'Selecione no máximo 50 ações' }, { status: 400 })),
+    );
+
+    await expect(salvarSelecao(['BBAS3'])).rejects.toThrow(
+      new ErroApi('Selecione no máximo 50 ações'),
+    );
+  });
+
+  it('recusa sem motivo legível usa a mensagem genérica', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('?', { status: 403 })),
+    );
+
+    await expect(salvarSelecao(['BBAS3'])).rejects.toThrow(
+      'O servidor do dashboard respondeu com erro (403)',
+    );
   });
 });
