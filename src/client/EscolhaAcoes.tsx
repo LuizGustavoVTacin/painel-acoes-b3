@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatarHorario, hojeEmBrasilia } from '../shared/datas';
-import { formatarPercentual } from '../shared/posicao';
 import { LIMITE_ACOES_SELECIONADAS } from '../shared/selecao';
 import type { Ticker } from '../shared/ticker';
 import {
@@ -18,8 +17,10 @@ import {
   selecaoFinal,
   type ModoEscolha,
 } from './escolha';
+import { FiltrosDaLista } from './FiltrosDaLista';
 import { Painel } from './Painel';
 import { comTempoLimite, ErroTempoEsgotado, TEMPO_LIMITE_PAINEL_MS, useCarga } from './useCarga';
+import { VariacaoDoDia } from './VariacaoDoDia';
 
 interface PropsEscolha {
   aoFechar: () => void;
@@ -41,19 +42,6 @@ async function buscarCatalogoPreenchido(signal: AbortSignal): Promise<Catalogo> 
   const catalogo = await buscarCatalogo(signal);
   if (catalogo.acoes.length === 0) throw new ErroApi('Catálogo vazio');
   return catalogo;
-}
-
-/** Variação do dia com seta e sinal: "▲ +2,35%", "▼ -1,10%", "0,00%". */
-function VariacaoDoDia({ centesimos }: { centesimos: number }) {
-  const direcao = centesimos > 0 ? 'alta' : centesimos < 0 ? 'baixa' : 'neutra';
-  const seta = { alta: '▲ ', baixa: '▼ ', neutra: '' }[direcao];
-  return (
-    <span className={`escolha-variacao variacao-${direcao}`}>
-      <span className="so-leitor">variação do dia </span>
-      <span aria-hidden="true">{seta}</span>
-      {formatarPercentual(centesimos)}
-    </span>
-  );
 }
 
 /**
@@ -241,42 +229,17 @@ export function EscolhaAcoes({
         }}
       />
 
-      <div className="escolha-filtros">
-        <label>
-          Setor
-          <select
-            value={setor}
-            disabled={salvando || !acoesDoCatalogo}
-            onChange={(evento) => setSetor(evento.target.value)}
-          >
-            <option value="">Todos{acoesDoCatalogo && ` (${acoesDoCatalogo.length})`}</option>
-            {setores.map((opcao) => (
-              <option key={opcao.setor} value={opcao.setor}>
-                {opcao.nome} ({opcao.quantidade})
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Mostrar
-          <select
-            value={modo}
-            disabled={salvando}
-            onChange={(evento) => setModo(evento.target.value as ModoEscolha)}
-          >
-            <option value="todas">Todas</option>
-            <option value="alta">Em alta {quando}</option>
-            <option value="baixa">Em baixa {quando}</option>
-            <option value="compradas" disabled={!compradas}>
-              {compradas
-                ? 'Que comprei'
-                : compras.situacao === 'erro'
-                  ? 'Que comprei (indisponível)'
-                  : 'Que comprei (carregando…)'}
-            </option>
-          </select>
-        </label>
-      </div>
+      <FiltrosDaLista
+        setores={setores}
+        totalDoCatalogo={acoesDoCatalogo?.length ?? null}
+        setor={setor}
+        aoMudarSetor={setSetor}
+        modo={modo}
+        aoMudarModo={setModo}
+        quando={quando}
+        compras={compras.situacao}
+        desabilitado={salvando}
+      />
 
       {tickersSalvos && (
         <p className="escolha-nota" aria-live="polite">
