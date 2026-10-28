@@ -21,6 +21,7 @@ const LIMITE_LOGO_BYTES = 200 * 1024;
 const TIPOS_DE_LOGO = new Set(['image/svg+xml', 'image/png']);
 /** Uma lista com menos da metade das ações já conhecidas indica corte ou mudança na API. */
 const FRACAO_MINIMA_DA_LISTA = 0.5;
+const AVISO_DE_COBRANCA = `${MENSAGEM_COBRANCA} (aviso recebido junto com os dados)`;
 
 export interface AcaoCatalogo {
   ticker: Ticker;
@@ -163,7 +164,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
 
       const listaEncolheu = itens.length < conhecidas * FRACAO_MINIMA_DA_LISTA;
       const aviso = avisoDeCobranca
-        ? `${MENSAGEM_COBRANCA} (aviso recebido junto com os dados)`
+        ? AVISO_DE_COBRANCA
         : listaEncolheu
           ? `A brapi devolveu menos ações que o normal (${itens.length} de ${conhecidas})`
           : null;
@@ -193,9 +194,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
       estado.registrarSucesso(
         'brapi_icones',
         momento,
-        resposta.avisoDeCobranca
-          ? `${MENSAGEM_COBRANCA} (aviso recebido junto com os dados)`
-          : null,
+        resposta.avisoDeCobranca ? AVISO_DE_COBRANCA : null,
       );
       const tipo = resposta.cabecalhos.get('content-type')?.split(';')[0].trim() ?? '';
       if (resposta.status === 200 && TIPOS_DE_LOGO.has(tipo) && resposta.corpo.byteLength > 0) {
