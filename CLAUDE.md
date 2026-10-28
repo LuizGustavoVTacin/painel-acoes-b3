@@ -50,4 +50,31 @@ purchases. Runs only on this computer (Windows), no hosting.
 Login, sales, historical charts, real-time quotes, hosting.
 
 ## Stack and commands
-(fill in after the plan is approved)
+- Node.js + TypeScript everywhere. Frontend: React + Vite. Backend: Express
+  (holds API keys in `.env`, caches quotes, serves the built frontend).
+- Database: SQLite file `dados.db` via `better-sqlite3` (no server to install).
+  Stores transactions, the stock selection and monthly API usage.
+- Tests: Vitest + Testing Library; API tests with supertest. Lint: ESLint + Prettier.
+- Commands (created in step 1): `npm run dev`, `npm test`, `npm run lint`,
+  `npm run build`, `npm start` (serves on http://localhost:3000). `iniciar.bat`
+  starts the app with a double-click.
+
+## Quote sources (zero cost only)
+- Primary: Yahoo Finance (unofficial, no key). Fetch all selected tickers
+  (`BBAS3.SA`) in a single batch request every 5 minutes.
+- Fallback: brapi.dev FREE plan only (15,000 req/month, 1 ticker/request,
+  ~30 min delay). Used when Yahoo fails, within a monthly budget of ~12,000
+  requests tracked in the database; refresh the stalest tickers first.
+- Logos: brapi `logourl`, downloaded once per ticker and cached locally.
+- Footer shows which API is currently in use. If Yahoo is broken, the footer
+  warns that Yahoo data is unavailable (and whether brapi is covering).
+- Maximum of 50 selected stocks; disable further checkboxes when the limit is hit.
+
+## Grid behavior
+- CSS Grid `auto-fill`, square cells; smaller screens = fewer columns, all
+  stocks reachable by scrolling.
+- Highlight the active square strongly and its 4 orthogonal neighbors softly.
+  Column count read from the real layout (ResizeObserver); neighbor logic is a
+  pure, tested function.
+- Hover only under `@media (hover: hover)`; on touch, a tap toggles the
+  highlight; keyboard focus and arrow keys also drive it.
