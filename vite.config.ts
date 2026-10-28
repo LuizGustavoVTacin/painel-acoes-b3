@@ -37,6 +37,14 @@ export default defineConfig(({ mode }) => {
           extends: true,
           test: { name: 'servidor', include: ['src/server/**/*.test.ts'], environment: 'node' },
         },
+        {
+          extends: true,
+          test: {
+            name: 'compartilhado',
+            include: ['src/shared/**/*.test.ts'],
+            environment: 'node',
+          },
+        },
       ],
     },
   };

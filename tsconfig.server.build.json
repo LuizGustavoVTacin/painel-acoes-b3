@@ -2,8 +2,8 @@
   "extends": "./tsconfig.server.json",
   "compilerOptions": {
     "noEmit": false,
-    "rootDir": "src/server",
-    "outDir": "dist/server"
+    "rootDir": "src",
+    "outDir": "dist"
   },
-  "exclude": ["src/server/**/*.test.ts"]
+  "exclude": ["src/**/*.test.ts"]
 }

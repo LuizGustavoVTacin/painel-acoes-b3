@@ -13,5 +13,5 @@
     "noEmit": true,
     "types": ["vite/client", "@testing-library/jest-dom/vitest"]
   },
-  "include": ["src/client", "vite.config.ts", "vitest.setup.ts"]
+  "include": ["src/client", "src/shared", "vite.config.ts", "vitest.setup.ts"]
 }
