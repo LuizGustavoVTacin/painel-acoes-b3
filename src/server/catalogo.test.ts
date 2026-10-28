@@ -408,3 +408,147 @@ describe('rotas de catálogo, logos e fontes', () => {
     ]);
   });
 });
+
+describe('robustez (pontos da revisão)', () => {
+  it('Retry-After absurdo não quebra a rota e mantém a pausa entre chamadas', async () => {
+    const { buscar, requisicoes } = criarFetchFalso({
+      [URL_LISTA_BRAPI]: json({}, { status: 429, headers: { 'Retry-After': '9999999999999' } }),
+    });
+    const app = criarApp({ banco, buscar, agora: () => agora });
+
+    const primeira = await request(app).get('/api/catalogo');
+    const segunda = await request(app).get('/api/catalogo');
+
+    expect(primeira.status).toBe(200);
+    expect(segunda.status).toBe(200);
+    expect(requisicoes).toHaveLength(1);
+  });
+
+  it('item recusado pelo banco não impede o restante do catálogo', async () => {
+    const { catalogo } = montar({ [URL_LISTA_BRAPI]: listaBrapi() });
+    // Simula uma regra do banco que recusa um item específico.
+    banco.exec(`CREATE TEMP TRIGGER recusa_itub BEFORE INSERT ON catalogo
+      WHEN NEW.ticker = 'ITUB4' BEGIN SELECT RAISE(ABORT, 'recusado'); END`);
+
+    await catalogo.garantirAtualizado();
+
+    expect(catalogo.listar().map((a) => a.ticker)).toEqual(['BBAS3']);
+  });
+
+  it('aviso de cobrança junto com dados: guarda os dados e avisa, sem pausar a API', async () => {
+    const lista = listaBrapi();
+    const { catalogo, estado } = montar({
+      [URL_LISTA_BRAPI]: new Response(await lista.text(), {
+        headers: { 'content-type': 'application/json', 'X-Brapi-Billing-Warning': 'near limit' },
+      }),
+    });
+
+    await catalogo.garantirAtualizado();
+
+    expect(catalogo.listar()).toHaveLength(2);
+    expect(estado.consultar('brapi')).toMatchObject({
+      situacao: 'ok',
+      mensagem:
+        'A API passou a exigir chave, plano ou pagamento (aviso recebido junto com os dados)',
+      proximaTentativa: null,
+    });
+  });
+
+  it('avisa quando a lista encolhe para menos da metade', async () => {
+    const acao = (stock: string) => ({ stock, name: stock, close: 17, logo: null });
+    const completa = json({ stocks: [acao('BBAS3'), acao('ITUB4'), acao('PETR4')] });
+    const pequena = json({ stocks: [acao('BBAS3')] });
+    const { catalogo, estado } = montar({ [URL_LISTA_BRAPI]: [completa, pequena] });
+    await catalogo.garantirAtualizado();
+    avancar(15 * MINUTO);
+
+    await catalogo.garantirAtualizado();
+
+    expect(estado.consultar('brapi')).toMatchObject({
+      situacao: 'ok',
+      mensagem: 'A brapi devolveu menos ações que o normal (1 de 3)',
+    });
+    expect(catalogo.listar()).toHaveLength(3);
+  });
+
+  it('relógio atrasado não trava as chamadas', async () => {
+    const { catalogo, requisicoes } = montar({ [URL_LISTA_BRAPI]: listaBrapi() });
+    await catalogo.garantirAtualizado();
+
+    avancar(-3 * HORA);
+    await catalogo.garantirAtualizado();
+
+    expect(requisicoes).toHaveLength(2);
+  });
+
+  it('logos que exigem pagamento: avisa e não baixa mais nada por 24 horas', async () => {
+    const { catalogo, estado, uso, requisicoes } = montar({
+      [URL_LISTA_BRAPI]: json({
+        stocks: [
+          { stock: 'BBAS3', name: 'BB', close: 17, logo: URL_LOGO },
+          {
+            stock: 'PETR4',
+            name: 'PETRO',
+            close: 38,
+            logo: 'https://icons.brapi.dev/icons/PETR4.svg',
+          },
+        ],
+      }),
+      'https://icons.brapi.dev/': json({ message: 'pagamento necessário' }, { status: 402 }),
+    });
+    await catalogo.garantirAtualizado();
+
+    expect(await catalogo.logo('BBAS3')).toBeNull();
+    expect(await catalogo.logo('PETR4')).toBeNull();
+    avancar(23 * HORA);
+    await catalogo.logo('PETR4');
+
+    expect(estado.consultar('brapi_icones')?.situacao).toBe('bloqueada');
+    expect(estado.consultar('brapi')?.situacao).toBe('ok');
+    expect(requisicoes.filter((r) => r.url.includes('icons'))).toHaveLength(1);
+    expect(uso.consultar('brapi', '2026-10')).toBe(1);
+    expect(uso.consultar('brapi_icones', '2026-10')).toBe(1);
+  });
+
+  it('primeira tentativa de logo sem internet: tenta de novo em 15 minutos, não em 24 horas', async () => {
+    const { catalogo, requisicoes } = montar({
+      [URL_LISTA_BRAPI]: listaBrapi(),
+      [URL_LOGO]: [new TypeError('fetch failed'), svg()],
+    });
+    await catalogo.garantirAtualizado();
+
+    expect(await catalogo.logo('BBAS3')).toBeNull();
+    avancar(10 * MINUTO);
+    expect(await catalogo.logo('BBAS3')).toBeNull();
+    avancar(5 * MINUTO);
+    expect(await catalogo.logo('BBAS3')).not.toBeNull();
+
+    expect(requisicoes.filter((r) => r.url === URL_LOGO)).toHaveLength(2);
+  });
+
+  it('baixa no máximo 4 logos ao mesmo tempo', async () => {
+    let simultaneos = 0;
+    let pico = 0;
+    const stocks = Array.from({ length: 10 }, (_, i) => ({
+      stock: `ABC${String.fromCharCode(65 + i)}3`,
+      name: `Empresa ${i}`,
+      close: 10,
+      logo: `https://icons.brapi.dev/icons/ABC${String.fromCharCode(65 + i)}3.svg`,
+    }));
+    const { catalogo } = montar({
+      [URL_LISTA_BRAPI]: json({ stocks }),
+      'https://icons.brapi.dev/': async () => {
+        pico = Math.max(pico, ++simultaneos);
+        await new Promise((resolver) => setTimeout(resolver, 5));
+        simultaneos--;
+        return svg();
+      },
+    });
+    await catalogo.garantirAtualizado();
+
+    const logos = await Promise.all(stocks.map((s) => catalogo.logo(s.stock)));
+
+    expect(logos.every((logo) => logo !== null)).toBe(true);
+    expect(pico).toBe(4);
+  });
+});

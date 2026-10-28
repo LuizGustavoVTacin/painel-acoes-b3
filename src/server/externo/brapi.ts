@@ -1,7 +1,13 @@
 import { reaisParaCentavos, type Centavos } from '../../shared/dinheiro.js';
 import { normalizarTicker, type Ticker } from '../../shared/ticker.js';
 import { ErroFonte } from './erroFonte.js';
-import { requisitarExterno, validarUrlExterna, type Buscar } from './http.js';
+import {
+  MENSAGEM_COBRANCA,
+  mencionaCobranca,
+  requisitarExterno,
+  validarUrlExterna,
+  type Buscar,
+} from './http.js';
 
 /**
  * Listagem pública da brapi: todas as ações com nome, logo e último preço numa só chamada,
@@ -35,7 +41,9 @@ function lerLogo(valor: unknown): string | null {
 function lerPreco(valor: unknown): Centavos | null {
   if (typeof valor !== 'number' || !(valor > 0)) return null;
   try {
-    return reaisParaCentavos(valor);
+    const centavos = reaisParaCentavos(valor);
+    // Preços abaixo de meio centavo arredondam para zero: não servem como cotação.
+    return centavos > 0 ? centavos : null;
   } catch {
     return null;
   }
@@ -69,15 +77,24 @@ export function interpretarListaBrapi(json: unknown): ItemCatalogo[] {
   return [...itens.values()];
 }
 
-export async function buscarListaBrapi(buscar: Buscar, agora: Date): Promise<ItemCatalogo[]> {
-  const { corpo } = await requisitarExterno(buscar, URL_LISTA_BRAPI, agora, {
+export interface ListaBrapi {
+  itens: ItemCatalogo[];
+  /** A brapi mandou cabeçalhos de cobrança junto com os dados. */
+  avisoDeCobranca: boolean;
+}
+
+export async function buscarListaBrapi(buscar: Buscar, agora: Date): Promise<ListaBrapi> {
+  const { corpo, avisoDeCobranca } = await requisitarExterno(buscar, URL_LISTA_BRAPI, agora, {
     limiteBytes: LIMITE_LISTA_BYTES,
   });
-  let json: unknown;
+  const texto = new TextDecoder().decode(corpo);
   try {
-    json = JSON.parse(new TextDecoder().decode(corpo));
-  } catch {
-    throw formatoAlterado('resposta não é JSON');
+    return { itens: interpretarListaBrapi(JSON.parse(texto)), avisoDeCobranca };
+  } catch (erro) {
+    // Uma resposta 200 sem dados que fala em chave ou plano é bloqueio, não mudança de formato.
+    if (mencionaCobranca(texto.slice(0, 2000))) {
+      throw new ErroFonte('bloqueada', MENSAGEM_COBRANCA, 200);
+    }
+    throw erro instanceof ErroFonte ? erro : formatoAlterado('resposta não é JSON');
   }
-  return interpretarListaBrapi(json);
 }

@@ -6,15 +6,21 @@ import { emTransacao } from './banco/emTransacao.js';
 import type { RepositorioUsoApi } from './banco/usoApi.js';
 import { buscarListaBrapi } from './externo/brapi.js';
 import { ErroFonte } from './externo/erroFonte.js';
-import type { EstadoFontes } from './externo/estadoFontes.js';
-import { requisitarExterno, type Buscar } from './externo/http.js';
+import type { EstadoFontes, Provedor } from './externo/estadoFontes.js';
+import { MENSAGEM_COBRANCA, requisitarExterno, type Buscar } from './externo/http.js';
 
 /** A brapi guarda a listagem em cache por 15 minutos; chamar antes disso é desperdício. */
 export const INTERVALO_MINIMO_CATALOGO_MS = 15 * 60 * 1000;
 /** Cada logo é conferido no máximo uma vez por dia. */
 export const VALIDADE_LOGO_MS = 24 * 60 * 60 * 1000;
+/** Depois de uma falha temporária ao baixar logos, espera antes de tentar de novo. */
+export const ESPERA_APOS_FALHA_DE_LOGO_MS = 15 * 60 * 1000;
+/** Downloads de logo simultâneos (na primeira abertura podem ser 50 de uma vez). */
+const DOWNLOADS_SIMULTANEOS = 4;
 const LIMITE_LOGO_BYTES = 200 * 1024;
 const TIPOS_DE_LOGO = new Set(['image/svg+xml', 'image/png']);
+/** Uma lista com menos da metade das ações já conhecidas indica corte ou mudança na API. */
+const FRACAO_MINIMA_DA_LISTA = 0.5;
 
 export interface AcaoCatalogo {
   ticker: Ticker;
@@ -51,9 +57,39 @@ function simplificar(texto: string): string {
   return texto.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 }
 
+/**
+ * Indica se já passou o intervalo desde o instante gravado. Um instante no futuro só existe
+ * se o relógio do computador foi atrasado; nesse caso considera que já passou.
+ */
+function passou(intervaloMs: number, desde: string | undefined, agora: Date): boolean {
+  if (desde === undefined) return true;
+  const decorrido = agora.getTime() - Date.parse(desde);
+  return !(decorrido >= 0 && decorrido < intervaloMs);
+}
+
+/** Limita quantas promessas rodam ao mesmo tempo. */
+function criarLimitador(maximo: number) {
+  let ativas = 0;
+  const fila: (() => void)[] = [];
+  return async function <T>(tarefa: () => Promise<T>): Promise<T> {
+    if (ativas >= maximo) await new Promise<void>((liberar) => fila.push(liberar));
+    ativas++;
+    try {
+      return await tarefa();
+    } finally {
+      ativas--;
+      fila.shift()?.();
+    }
+  };
+}
+
 export type ServicoCatalogo = ReturnType<typeof criarServicoCatalogo>;
 
-/** Catálogo de ações, preços de reserva e logos vindos da brapi, guardados no banco. */
+/**
+ * Catálogo de ações, preços de reserva e logos vindos da brapi, guardados no banco.
+ * Ações que saem da listagem continuam no catálogo (com o último preço e logo conhecidos):
+ * apagar dependeria de a brapi nunca devolver uma lista incompleta.
+ */
 export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: DependenciasCatalogo) {
   const gravarItem = banco.prepare(
     `INSERT INTO catalogo (ticker, nome, logo_url, preco_centavos, atualizado_em)
@@ -61,6 +97,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
      ON CONFLICT (ticker) DO UPDATE SET nome = excluded.nome, logo_url = excluded.logo_url,
        preco_centavos = excluded.preco_centavos, atualizado_em = excluded.atualizado_em`,
   );
+  const contarItens = banco.prepare('SELECT count(*) AS total FROM catalogo');
   const listarItens = banco.prepare('SELECT ticker, nome FROM catalogo ORDER BY ticker');
   const buscarPreco = banco.prepare(
     'SELECT preco_centavos, atualizado_em FROM catalogo WHERE ticker = ? AND preco_centavos IS NOT NULL',
@@ -78,31 +115,61 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
 
   let atualizacaoEmAndamento: Promise<void> | null = null;
   const logosEmAndamento = new Map<Ticker, Promise<void>>();
+  const limitarDownloads = criarLimitador(DOWNLOADS_SIMULTANEOS);
 
   const mesAtual = (momento: Date) => hojeEmBrasilia(momento).slice(0, 7);
 
+  /** Registra a falha sem nunca lançar: um erro aqui não pode derrubar a rota. */
+  function registrarFalha(provedor: Provedor, erro: unknown, momento: Date): void {
+    const falha =
+      erro instanceof ErroFonte
+        ? erro
+        : new ErroFonte('instavel', 'Erro inesperado ao processar os dados da API');
+    if (!(erro instanceof ErroFonte)) console.error(`Erro inesperado (${provedor}):`, erro);
+    try {
+      estado.registrarFalha(provedor, falha, momento);
+    } catch (erroAoRegistrar) {
+      console.error(`Não foi possível registrar a falha de ${provedor}:`, erroAoRegistrar);
+    }
+  }
+
+  /** Grava os itens um a um: um item recusado pelo banco não impede os demais. */
+  function salvarItens(itens: { ticker: Ticker }[], momento: Date): number {
+    let gravados = 0;
+    emTransacao(banco, () => {
+      for (const item of itens) {
+        try {
+          gravarItem.run({ ...item, agora: momento.toISOString() });
+          gravados++;
+        } catch (erro) {
+          console.warn(`Ação ${item.ticker} ignorada no catálogo:`, (erro as Error).message);
+        }
+      }
+    });
+    return gravados;
+  }
+
   async function atualizarCatalogo(): Promise<void> {
     const momento = agora();
-    const ultimaTentativa = estado.consultar('brapi')?.ultimaTentativa;
-    const recente =
-      ultimaTentativa !== undefined &&
-      momento.getTime() - Date.parse(ultimaTentativa) < INTERVALO_MINIMO_CATALOGO_MS;
-    if (recente || !estado.podeChamar('brapi', momento)) return;
+    const anterior = estado.consultar('brapi')?.ultimaTentativa;
+    if (!passou(INTERVALO_MINIMO_CATALOGO_MS, anterior, momento)) return;
+    if (!estado.podeChamar('brapi', momento)) return;
 
     uso.registrar('brapi', mesAtual(momento));
     try {
-      const itens = await buscarListaBrapi(buscar, momento);
-      emTransacao(banco, () => {
-        for (const item of itens) gravarItem.run({ ...item, agora: momento.toISOString() });
-      });
-      estado.registrarSucesso('brapi', momento);
+      const conhecidas = (contarItens.get() as { total: number }).total;
+      const { itens, avisoDeCobranca } = await buscarListaBrapi(buscar, momento);
+      salvarItens(itens, momento);
+
+      const listaEncolheu = itens.length < conhecidas * FRACAO_MINIMA_DA_LISTA;
+      const aviso = avisoDeCobranca
+        ? `${MENSAGEM_COBRANCA} (aviso recebido junto com os dados)`
+        : listaEncolheu
+          ? `A brapi devolveu menos ações que o normal (${itens.length} de ${conhecidas})`
+          : null;
+      estado.registrarSucesso('brapi', momento, aviso);
     } catch (erro) {
-      const falha =
-        erro instanceof ErroFonte
-          ? erro
-          : new ErroFonte('instavel', 'Erro inesperado ao processar os dados da brapi');
-      if (!(erro instanceof ErroFonte)) console.error('Erro inesperado no catálogo:', erro);
-      estado.registrarFalha('brapi', falha, momento);
+      registrarFalha('brapi', erro, momento);
     }
   }
 
@@ -116,13 +183,20 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
       verificadoEm: momento.toISOString(),
     };
 
-    uso.registrar('brapi', mesAtual(momento));
+    uso.registrar('brapi_icones', mesAtual(momento));
     try {
       const resposta = await requisitarExterno(buscar, url, momento, {
         limiteBytes: LIMITE_LOGO_BYTES,
         cabecalhos: salvo?.etag && salvo.conteudo ? { 'if-none-match': salvo.etag } : {},
         statusAceitos: [304, 404],
       });
+      estado.registrarSucesso(
+        'brapi_icones',
+        momento,
+        resposta.avisoDeCobranca
+          ? `${MENSAGEM_COBRANCA} (aviso recebido junto com os dados)`
+          : null,
+      );
       const tipo = resposta.cabecalhos.get('content-type')?.split(';')[0].trim() ?? '';
       if (resposta.status === 200 && TIPOS_DE_LOGO.has(tipo) && resposta.corpo.byteLength > 0) {
         gravarLogo.run({
@@ -133,11 +207,23 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
         });
         return;
       }
+      // 304 (não mudou), 404 (sem logo) ou tipo inesperado: mantém o que havia até amanhã.
+      gravarLogo.run(manter);
     } catch (erro) {
-      console.warn(`Não foi possível baixar o logo de ${ticker}:`, (erro as Error).message);
+      const temporaria = erro instanceof ErroFonte && erro.situacao === 'instavel';
+      // Falha temporária: pausa os downloads de logo por alguns minutos, não por um dia.
+      const falha = temporaria
+        ? new ErroFonte(
+            'instavel',
+            erro.message,
+            erro.status,
+            erro.esperarAte ?? new Date(momento.getTime() + ESPERA_APOS_FALHA_DE_LOGO_MS),
+          )
+        : erro;
+      registrarFalha('brapi_icones', falha, momento);
+      // Sem logo salvo e falha temporária: nada a gravar, para tentar de novo em breve.
+      if (!(temporaria && !salvo)) gravarLogo.run(manter);
     }
-    // 304, 404, tipo inesperado ou falha: mantém o que havia e só tenta de novo amanhã.
-    gravarLogo.run(manter);
   }
 
   return {
@@ -177,15 +263,15 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
 
     /** Logo salvo no banco; baixa na primeira vez e confere no máximo uma vez por dia. */
     async logo(ticker: Ticker): Promise<Logo | null> {
+      const momento = agora();
       const salvo = buscarLogo.get(ticker) as LinhaLogo | undefined;
-      const vencido =
-        !salvo || agora().getTime() - Date.parse(salvo.verificado_em) >= VALIDADE_LOGO_MS;
+      const vencido = passou(VALIDADE_LOGO_MS, salvo?.verificado_em, momento);
       const url = (buscarLogoUrl.get(ticker) as { logo_url: string | null } | undefined)?.logo_url;
 
-      if (vencido && url) {
+      if (vencido && url && estado.podeChamar('brapi_icones', momento)) {
         let conferencia = logosEmAndamento.get(ticker);
         if (!conferencia) {
-          conferencia = conferirLogo(ticker, url, salvo).finally(() =>
+          conferencia = limitarDownloads(() => conferirLogo(ticker, url, salvo)).finally(() =>
             logosEmAndamento.delete(ticker),
           );
           logosEmAndamento.set(ticker, conferencia);

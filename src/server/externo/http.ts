@@ -4,14 +4,23 @@ import { ErroFonte } from './erroFonte.js';
 export type Buscar = typeof fetch;
 
 /**
- * Únicos endereços externos que o app pode acessar. Todos são gratuitos e sem chave:
- * o app nunca usa APIs com conta, plano ou pagamento.
+ * Únicos endereços externos que o app pode acessar, com os únicos parâmetros de URL aceitos
+ * em cada um. Todos são gratuitos e sem chave: o app nunca usa APIs com conta, plano ou
+ * pagamento, e por isso nenhum parâmetro de chave pode sequer ser montado.
  */
-export const HOSTS_PERMITIDOS: ReadonlySet<string> = new Set(['brapi.dev', 'icons.brapi.dev']);
+const PARAMETROS_POR_HOST: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ['brapi.dev', new Set(['type', 'limit'])],
+  ['icons.brapi.dev', new Set<string>()],
+]);
+export const HOSTS_PERMITIDOS: ReadonlySet<string> = new Set(PARAMETROS_POR_HOST.keys());
 
 const TEMPO_LIMITE_MS = 10_000;
 const LIMITE_CORPO_DE_ERRO = 64 * 1024;
-const PARAMETROS_DE_CHAVE = ['token', 'apikey', 'api_key', 'key'];
+/** Espera máxima pedida por uma API (Retry-After) que respeitamos. */
+const ESPERA_MAXIMA_MS = 24 * 60 * 60 * 1000;
+/** Para 401/403 sem sinal de cobrança (ex.: bloqueio anti-robô): espera antes de insistir. */
+const ESPERA_ACESSO_RECUSADO_MS = 60 * 60 * 1000;
+const CABECALHOS_PROIBIDOS = /authorization|cookie|token|api-?key/i;
 
 // Sinais de que a API passou a cobrar ou exigir conta.
 const CABECALHOS_DE_COBRANCA = [
@@ -21,12 +30,16 @@ const CABECALHOS_DE_COBRANCA = [
   'x-brapi-upgrade-url',
 ];
 const TEXTOS_DE_COBRANCA =
-  /token|chave|plano|upgrade|assinatura|premium|pagamento|subscription|payment|unauthori[sz]ed|forbidden|crumb/i;
+  /token|api[ -_]?key|chave|plano|upgrade|assinatura|premium|pagamento|subscription|payment/i;
+
+export const MENSAGEM_COBRANCA = 'A API passou a exigir chave, plano ou pagamento';
 
 export interface RespostaExterna {
   status: number;
   cabecalhos: Headers;
   corpo: Uint8Array;
+  /** A resposta veio com dados, mas também com cabeçalhos de cobrança (aviso, não bloqueio). */
+  avisoDeCobranca: boolean;
 }
 
 export interface OpcoesRequisicao {
@@ -38,27 +51,39 @@ export interface OpcoesRequisicao {
   statusAceitos?: readonly number[];
 }
 
-/** Garante que a URL é de um host permitido e não carrega nenhuma chave de acesso. */
+/** Garante que a URL é de um host permitido e só usa os parâmetros previstos para ele. */
 export function validarUrlExterna(url: string): URL {
   const endereco = new URL(url);
-  if (endereco.protocol !== 'https:' || !HOSTS_PERMITIDOS.has(endereco.hostname)) {
+  const parametrosAceitos = PARAMETROS_POR_HOST.get(endereco.hostname);
+  if (endereco.protocol !== 'https:' || !parametrosAceitos) {
     throw new Error(`Endereço externo não permitido: ${endereco.origin}`);
   }
-  const parametroDeChave = PARAMETROS_DE_CHAVE.find((nome) => endereco.searchParams.has(nome));
-  if (parametroDeChave) {
-    throw new Error(`Chaves de API são proibidas (parâmetro "${parametroDeChave}")`);
+  for (const nome of endereco.searchParams.keys()) {
+    if (!parametrosAceitos.has(nome)) {
+      throw new Error(`Parâmetro não permitido em ${endereco.hostname}: "${nome}"`);
+    }
   }
   return endereco;
+}
+
+/** Indica se um texto de resposta fala em chave, plano ou pagamento. */
+export function mencionaCobranca(texto: string): boolean {
+  return TEXTOS_DE_COBRANCA.test(texto);
 }
 
 function temCabecalhoDeCobranca(cabecalhos: Headers): boolean {
   return CABECALHOS_DE_COBRANCA.some((nome) => cabecalhos.has(nome));
 }
 
-function lerRetryAfter(cabecalhos: Headers, agora: Date): Date | undefined {
+/**
+ * Quando a API pede para esperar. Só aceita números de segundos (valores enormes costumam
+ * ser datas em formato epoch) e limita a espera a 24 h.
+ */
+export function lerRetryAfter(cabecalhos: Headers, agora: Date): Date | undefined {
   const valor = cabecalhos.get('retry-after') ?? cabecalhos.get('ratelimit-reset');
-  const segundos = valor !== null && /^\d+$/.test(valor) ? Number(valor) : NaN;
-  return Number.isFinite(segundos) ? new Date(agora.getTime() + segundos * 1000) : undefined;
+  if (valor === null || !/^\d{1,9}$/.test(valor.trim())) return undefined;
+  const esperaMs = Math.min(Number(valor) * 1000, ESPERA_MAXIMA_MS);
+  return new Date(agora.getTime() + esperaMs);
 }
 
 /** Classifica uma resposta HTTP que não foi bem-sucedida. */
@@ -68,8 +93,8 @@ export function classificarFalha(
   corpoTexto: string,
   agora: Date,
 ): ErroFonte {
-  if (status === 401 || status === 402 || status === 403 || temCabecalhoDeCobranca(cabecalhos)) {
-    return new ErroFonte('bloqueada', 'A API passou a exigir chave, plano ou pagamento', status);
+  if (status === 402 || temCabecalhoDeCobranca(cabecalhos)) {
+    return new ErroFonte('bloqueada', MENSAGEM_COBRANCA, status);
   }
   if (status === 429) {
     return new ErroFonte(
@@ -82,8 +107,18 @@ export function classificarFalha(
   if (status >= 500 || status === 408) {
     return new ErroFonte('instavel', `A API respondeu com erro ${status}`, status);
   }
-  if (TEXTOS_DE_COBRANCA.test(corpoTexto)) {
-    return new ErroFonte('bloqueada', 'A API passou a exigir chave, plano ou pagamento', status);
+  // Demais 4xx: o texto diz se é cobrança (ex.: "MISSING_TOKEN") ou outra coisa.
+  if (mencionaCobranca(corpoTexto)) {
+    return new ErroFonte('bloqueada', MENSAGEM_COBRANCA, status);
+  }
+  if (status === 401 || status === 403) {
+    // Sem sinal de cobrança, pode ser temporário (bloqueio anti-robô, sessão expirada).
+    return new ErroFonte(
+      'instavel',
+      'A API recusou o acesso (pode ser temporário)',
+      status,
+      new Date(agora.getTime() + ESPERA_ACESSO_RECUSADO_MS),
+    );
   }
   return new ErroFonte(
     'formato_alterado',
@@ -123,7 +158,7 @@ export async function requisitarExterno(
   { limiteBytes, cabecalhos = {}, statusAceitos = [] }: OpcoesRequisicao,
 ): Promise<RespostaExterna> {
   const endereco = validarUrlExterna(url);
-  if (Object.keys(cabecalhos).some((nome) => /authorization|token|api-?key/i.test(nome))) {
+  if (Object.keys(cabecalhos).some((nome) => CABECALHOS_PROIBIDOS.test(nome))) {
     throw new Error('Cabeçalhos de autenticação são proibidos');
   }
 
@@ -135,24 +170,30 @@ export async function requisitarExterno(
       redirect: 'error',
     });
   } catch (erro) {
-    const tempoEsgotado = erro instanceof DOMException && erro.name === 'TimeoutError';
     throw new ErroFonte(
       'instavel',
-      tempoEsgotado ? 'A API demorou demais para responder' : 'Não foi possível conectar à API',
+      ehTempoEsgotado(erro)
+        ? 'A API demorou demais para responder'
+        : 'Não foi possível conectar à API',
     );
   }
 
-  const sucesso = resposta.ok || statusAceitos.includes(resposta.status);
-  if (sucesso && !temCabecalhoDeCobranca(resposta.headers)) {
+  if (resposta.ok || statusAceitos.includes(resposta.status)) {
     try {
       return {
         status: resposta.status,
         cabecalhos: resposta.headers,
         corpo: await lerCorpoLimitado(resposta, limiteBytes),
+        avisoDeCobranca: temCabecalhoDeCobranca(resposta.headers),
       };
     } catch (erro) {
       if (erro instanceof ErroFonte) throw erro;
-      throw new ErroFonte('instavel', 'A conexão com a API caiu no meio da resposta');
+      throw new ErroFonte(
+        'instavel',
+        ehTempoEsgotado(erro)
+          ? 'A API demorou demais para responder'
+          : 'A conexão com a API caiu no meio da resposta',
+      );
     }
   }
 
@@ -160,4 +201,8 @@ export async function requisitarExterno(
     .then((corpo) => new TextDecoder().decode(corpo))
     .catch(() => '');
   throw classificarFalha(resposta.status, resposta.headers, corpoTexto, agora);
+}
+
+function ehTempoEsgotado(erro: unknown): boolean {
+  return erro instanceof DOMException && erro.name === 'TimeoutError';
 }

@@ -70,6 +70,7 @@ describe('interpretarListaBrapi', () => {
     ['negativo', -1],
     ['texto', '17,38'],
     ['infinito', Infinity],
+    ['abaixo de meio centavo (arredondaria para zero)', 0.004],
   ])('deixa o preço vazio quando ele vem %s', (_caso, close) => {
     expect(
       interpretarListaBrapi({ stocks: [acao('BBAS3', { close })] })[0].precoCentavos,
@@ -105,12 +106,21 @@ describe('buscarListaBrapi', () => {
       [URL_LISTA_BRAPI]: json({ stocks: [acao('BBAS3')] }),
     });
 
-    const itens = await buscarListaBrapi(buscar, AGORA);
+    const { itens, avisoDeCobranca } = await buscarListaBrapi(buscar, AGORA);
 
     expect(itens).toHaveLength(1);
+    expect(avisoDeCobranca).toBe(false);
     expect(requisicoes.map((r) => r.url)).toEqual([URL_LISTA_BRAPI]);
     expect(requisicoes[0].url).not.toMatch(/token|key/i);
     expect(requisicoes[0].cabecalhos.has('authorization')).toBe(false);
+  });
+
+  it('resposta 200 sem dados pedindo chave é bloqueio, não mudança de formato', async () => {
+    const { buscar } = criarFetchFalso({
+      [URL_LISTA_BRAPI]: json({ error: true, message: 'Token obrigatório para este recurso' }),
+    });
+
+    await expect(buscarListaBrapi(buscar, AGORA)).rejects.toMatchObject({ situacao: 'bloqueada' });
   });
 
   it('acusa formato alterado quando a resposta não é JSON', async () => {

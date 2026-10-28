@@ -1,11 +1,13 @@
 import type { Banco } from '../banco/conexao.js';
 import type { ErroFonte, SituacaoFonte } from './erroFonte.js';
 
-export type Provedor = 'brapi' | 'yahoo';
+/** brapi: listagem (catálogo e preços); brapi_icones: imagens dos logos; yahoo: cotações. */
+export type Provedor = 'brapi' | 'brapi_icones' | 'yahoo';
 
 export interface EstadoFonte {
   provedor: Provedor;
   situacao: SituacaoFonte;
+  /** Motivo da falha, ou um aviso quando a API funciona mas algo merece atenção. */
   mensagem: string | null;
   /** Desde quando a API está nesta situação. */
   desde: string;
@@ -61,28 +63,37 @@ export function criarEstadoFontes(banco: Banco) {
        proxima_tentativa = excluded.proxima_tentativa`,
   );
 
+  function consultar(provedor: Provedor): EstadoFonte | null {
+    const linha = consultarUma.get(provedor) as LinhaEstado | undefined;
+    return linha ? paraEstado(linha) : null;
+  }
+
   return {
-    consultar(provedor: Provedor): EstadoFonte | null {
-      const linha = consultarUma.get(provedor) as LinhaEstado | undefined;
-      return linha ? paraEstado(linha) : null;
-    },
+    consultar,
 
     listar(): EstadoFonte[] {
       return (listarTodas.all() as unknown as LinhaEstado[]).map(paraEstado);
     },
 
-    /** Falso enquanto a API estiver em espera (bloqueada, formato alterado ou limite atingido). */
+    /**
+     * Falso enquanto a API estiver em espera (bloqueada, formato alterado ou limite atingido).
+     * Esperas que terminariam mais de 24 h no futuro só existem se o relógio do computador
+     * foi atrasado depois de gravadas; nesse caso a espera é ignorada.
+     */
     podeChamar(provedor: Provedor, agora: Date): boolean {
-      const proxima = this.consultar(provedor)?.proximaTentativa;
-      return !proxima || agora.getTime() >= Date.parse(proxima);
+      const proxima = consultar(provedor)?.proximaTentativa;
+      if (!proxima) return true;
+      const faltaMs = Date.parse(proxima) - agora.getTime();
+      return faltaMs <= 0 || faltaMs > INTERVALO_RECHECAGEM_MS;
     },
 
-    registrarSucesso(provedor: Provedor, agora: Date): void {
+    /** Registra sucesso; um aviso opcional fica visível sem tirar a API de uso. */
+    registrarSucesso(provedor: Provedor, agora: Date, aviso: string | null = null): void {
       const momento = agora.toISOString();
       gravar.run({
         provedor,
         situacao: 'ok',
-        mensagem: null,
+        mensagem: aviso,
         agora: momento,
         sucesso: momento,
         proxima: null,
@@ -94,13 +105,14 @@ export function criarEstadoFontes(banco: Banco) {
       const proxima = esperaLonga
         ? new Date(agora.getTime() + INTERVALO_RECHECAGEM_MS)
         : erro.esperarAte;
+      const proximaValida = proxima && Number.isFinite(proxima.getTime()) ? proxima : null;
       gravar.run({
         provedor,
         situacao: erro.situacao,
         mensagem: erro.message,
         agora: agora.toISOString(),
         sucesso: null,
-        proxima: proxima?.toISOString() ?? null,
+        proxima: proximaValida?.toISOString() ?? null,
       });
     },
   };
