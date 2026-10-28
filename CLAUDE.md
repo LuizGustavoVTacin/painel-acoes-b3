@@ -71,14 +71,22 @@ Login, sales, historical charts, real-time quotes, hosting.
 
 ## Quote sources (zero cost only)
 
+- HARD RULE: never use an API that needs a key, account, plan or payment. No
+  tokens in code, `.env` or requests. All external calls go through
+  `requisitarExterno` (host allowlist; auth headers and key params rejected).
 - Primary: Yahoo Finance (unofficial, no key). Fetch all selected tickers
   (`BBAS3.SA`) in a single batch request every 5 minutes.
-- Fallback: brapi.dev FREE plan only (15,000 req/month, 1 ticker/request,
-  ~30 min delay). Used when Yahoo fails, within a monthly budget of ~12,000
-  requests tracked in the database; refresh the stalest tickers first.
-- Logos: brapi `logourl`, downloaded once per ticker and cached locally.
-- Footer shows which API is currently in use. If Yahoo is broken, the footer
-  warns that Yahoo data is unavailable (and whether brapi is covering).
+- Fallback, catalog and logos: brapi public list `/api/quote/list` (no key),
+  one call returns every stock with name, logo URL and last price. Called at
+  most once every 15 minutes; each call is counted in `uso_api`.
+- Logos: image stored in the `logos` table, downloaded on first use and
+  re-checked at most once a day (ETag). Served by `/api/logos/:ticker` with a
+  one-day browser cache; quote responses never carry the image.
+- API health in `estado_api`: ok / instavel / bloqueada (asks for key or
+  payment) / formato_alterado. Blocked or changed APIs are not called again
+  for 24 h; the app keeps the last saved data and must never break.
+- Footer shows which API is currently in use and warns when one is unavailable,
+  blocked (payment required) or changed format.
 - Maximum of 50 selected stocks; disable further checkboxes when the limit is hit.
 
 ## Grid behavior

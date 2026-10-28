@@ -3,7 +3,8 @@ import { emTransacao } from './emTransacao.js';
 
 export const LIMITE_ACOES_SELECIONADAS = 50;
 
-const TICKER_VALIDO = `(ticker GLOB '[A-Z][A-Z][A-Z][A-Z][0-9]' OR ticker GLOB '[A-Z][A-Z][A-Z][A-Z][0-9][0-9]')`;
+const RAIZ_TICKER = '[A-Z][A-Z0-9][A-Z0-9][A-Z0-9]';
+const TICKER_VALIDO = `(ticker GLOB '${RAIZ_TICKER}[0-9]' OR ticker GLOB '${RAIZ_TICKER}[0-9][0-9]')`;
 const AGORA_ISO = `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
 
 /**
@@ -45,6 +46,34 @@ const MIGRACOES: readonly string[] = [
     mes TEXT NOT NULL CHECK (mes GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]'),
     requisicoes INTEGER NOT NULL CHECK (requisicoes >= 0),
     PRIMARY KEY (provedor, mes)
+  ) STRICT;
+  `,
+  `
+  CREATE TABLE catalogo (
+    ticker TEXT PRIMARY KEY CHECK ${TICKER_VALIDO},
+    nome TEXT NOT NULL,
+    logo_url TEXT,
+    preco_centavos INTEGER CHECK (preco_centavos > 0),
+    atualizado_em TEXT NOT NULL
+  ) STRICT;
+
+  CREATE TABLE logos (
+    ticker TEXT PRIMARY KEY CHECK ${TICKER_VALIDO},
+    conteudo BLOB,
+    tipo TEXT,
+    etag TEXT,
+    verificado_em TEXT NOT NULL,
+    CHECK ((conteudo IS NULL) = (tipo IS NULL))
+  ) STRICT;
+
+  CREATE TABLE estado_api (
+    provedor TEXT PRIMARY KEY,
+    situacao TEXT NOT NULL CHECK (situacao IN ('ok', 'instavel', 'bloqueada', 'formato_alterado')),
+    mensagem TEXT,
+    desde TEXT NOT NULL,
+    ultima_tentativa TEXT NOT NULL,
+    ultimo_sucesso TEXT,
+    proxima_tentativa TEXT
   ) STRICT;
   `,
 ];

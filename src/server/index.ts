@@ -7,7 +7,7 @@ const porta = lerPorta(process.env.PORT);
 const pastaCliente = pastaClienteCompilado(import.meta.url);
 const banco = abrirBanco(caminhoBanco(process.env.DB_ARQUIVO, import.meta.url));
 
-const servidor = criarApp({ banco, pastaCliente })
+const servidor = criarApp({ banco, buscar: fetch, pastaCliente })
   .listen(porta, '127.0.0.1', () => {
     console.log(`Dashboard B3 rodando em http://localhost:${porta}`);
   })

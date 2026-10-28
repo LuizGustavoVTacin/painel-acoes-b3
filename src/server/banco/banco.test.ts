@@ -59,7 +59,14 @@ describe('migrações', () => {
     ).map((t) => t.name);
 
     expect(user_version).toBe(VERSAO_ATUAL);
-    expect(tabelas).toEqual(['acoes_selecionadas', 'transacoes', 'uso_api']);
+    expect(tabelas).toEqual([
+      'acoes_selecionadas',
+      'catalogo',
+      'estado_api',
+      'logos',
+      'transacoes',
+      'uso_api',
+    ]);
   });
 
   it('mantém os dados ao fechar e reabrir o arquivo, sem reaplicar migrações', () => {
@@ -165,12 +172,14 @@ describe('regras do próprio banco', () => {
       .run(linha as Record<string, string | number>);
   };
 
-  it('aceita uma linha válida', () => {
-    expect(() => inserirBruto({})).not.toThrow();
+  it.each(['BBAS3', 'TAEE11', 'B3SA3'])('aceita o ticker %s', (ticker) => {
+    expect(() => inserirBruto({ ticker })).not.toThrow();
   });
 
   it.each([
     ['ticker inválido', { ticker: 'bbas3' }],
+    ['ticker fracionário', { ticker: 'BBAS3F' }],
+    ['ticker começando com dígito', { ticker: '3BSA3' }],
     ['data inexistente', { data: '2026-02-30' }],
     ['data em outro formato', { data: '20/10/2026' }],
     ['quantidade zero', { quantidade: 0 }],

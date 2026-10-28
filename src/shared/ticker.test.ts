@@ -7,6 +7,7 @@ describe('normalizarTicker', () => {
     ['taee11', 'TAEE11'],
     ['  petr4 ', 'PETR4'],
     ['Bpac11', 'BPAC11'],
+    ['b3sa3', 'B3SA3'],
   ])('"%s" → %s', (texto, ticker) => {
     expect(normalizarTicker(texto)).toBe(ticker);
   });

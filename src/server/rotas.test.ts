@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarApp } from './app.js';
 import { abrirBanco, type Banco } from './banco/conexao.js';
+import { fetchProibido } from './testes/fetchFalso.js';
 
 // 27/10/2026 às 22:30 em Brasília (já dia 28 em UTC).
 const AGORA = new Date('2026-10-28T01:30:00Z');
@@ -20,7 +21,7 @@ let app: ReturnType<typeof criarApp>;
 
 beforeEach(() => {
   banco = abrirBanco(':memory:');
-  app = criarApp({ banco, agora: () => AGORA });
+  app = criarApp({ banco, buscar: fetchProibido, agora: () => AGORA });
 });
 
 afterEach(() => {

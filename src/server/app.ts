@@ -4,14 +4,27 @@ import path from 'node:path';
 import type { Banco } from './banco/conexao.js';
 import { criarRepositorioSelecao } from './banco/selecao.js';
 import { criarRepositorioTransacoes } from './banco/transacoes.js';
+import { criarRepositorioUsoApi } from './banco/usoApi.js';
+import { criarServicoCatalogo } from './catalogo.js';
 import { ErroHttp } from './erros.js';
-import { criarRotasPosicoes, criarRotasSelecao, criarRotasTransacoes } from './rotas.js';
+import { criarEstadoFontes } from './externo/estadoFontes.js';
+import type { Buscar } from './externo/http.js';
+import {
+  criarRotasCatalogo,
+  criarRotasFontes,
+  criarRotasLogos,
+  criarRotasPosicoes,
+  criarRotasSelecao,
+  criarRotasTransacoes,
+} from './rotas.js';
 
 export interface OpcoesApp {
   banco: Banco;
+  /** Acesso à internet (o fetch global); os testes passam um falso. */
+  buscar: Buscar;
   /** Pasta com o frontend compilado. Só é servida se contiver um index.html. */
   pastaCliente?: string;
-  /** Relógio usado nas validações de data (substituível nos testes). */
+  /** Relógio usado nas validações de data e nos intervalos das APIs (substituível nos testes). */
   agora?: () => Date;
 }
 
@@ -52,10 +65,24 @@ const tratarErro: ErrorRequestHandler = (erro, _req, res, next) => {
   res.status(500).json({ erro: 'Erro interno do servidor' });
 };
 
-export function criarApp({ banco, pastaCliente, agora = () => new Date() }: OpcoesApp): Express {
+export function criarApp({
+  banco,
+  buscar,
+  pastaCliente,
+  agora = () => new Date(),
+}: OpcoesApp): Express {
+  const estado = criarEstadoFontes(banco);
   const dependencias = {
     transacoes: criarRepositorioTransacoes(banco),
     selecao: criarRepositorioSelecao(banco),
+    catalogo: criarServicoCatalogo({
+      banco,
+      buscar,
+      agora,
+      estado,
+      uso: criarRepositorioUsoApi(banco),
+    }),
+    estado,
     agora,
   };
 
@@ -71,6 +98,9 @@ export function criarApp({ banco, pastaCliente, agora = () => new Date() }: Opco
   app.use('/api/transacoes', criarRotasTransacoes(dependencias));
   app.use('/api/selecao', criarRotasSelecao(dependencias));
   app.use('/api/posicoes', criarRotasPosicoes(dependencias));
+  app.use('/api/catalogo', criarRotasCatalogo(dependencias));
+  app.use('/api/logos', criarRotasLogos(dependencias));
+  app.use('/api/fontes', criarRotasFontes(dependencias));
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ erro: 'Rota não encontrada' });

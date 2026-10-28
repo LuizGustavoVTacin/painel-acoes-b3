@@ -5,13 +5,67 @@ import { normalizarTicker, type Ticker } from '../shared/ticker.js';
 import { LIMITE_ACOES_SELECIONADAS } from './banco/migracoes.js';
 import type { RepositorioSelecao } from './banco/selecao.js';
 import type { RepositorioTransacoes } from './banco/transacoes.js';
+import type { ServicoCatalogo } from './catalogo.js';
+import type { EstadoFontes } from './externo/estadoFontes.js';
 import { ErroNaoEncontrado, ErroValidacao } from './erros.js';
 import { lerId, validarDadosTransacao, validarSelecao } from './validacao.js';
 
 export interface DependenciasRotas {
   transacoes: RepositorioTransacoes;
   selecao: RepositorioSelecao;
+  catalogo: ServicoCatalogo;
+  estado: EstadoFontes;
   agora: () => Date;
+}
+
+/** Ações disponíveis para seleção, com nome e endereço local do logo. */
+export function criarRotasCatalogo({ catalogo }: DependenciasRotas): Router {
+  const rotas = Router();
+
+  rotas.get('/', async (req, res) => {
+    const { busca = '' } = req.query;
+    if (typeof busca !== 'string') throw new ErroValidacao('Busca inválida');
+    await catalogo.garantirAtualizado();
+    const acoes = catalogo
+      .listar(busca)
+      .map((acao) => ({ ...acao, logo: `/api/logos/${acao.ticker}` }));
+    res.json({ acoes });
+  });
+
+  return rotas;
+}
+
+// SVG pode conter scripts: a política abaixo impede que rodem mesmo se o arquivo for aberto direto.
+const POLITICA_LOGO = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+
+export function criarRotasLogos({ catalogo }: DependenciasRotas): Router {
+  const rotas = Router();
+
+  rotas.get('/:ticker', async (req, res) => {
+    const ticker = normalizarTicker(req.params.ticker);
+    const logo = ticker ? await catalogo.logo(ticker) : null;
+    if (!logo) throw new ErroNaoEncontrado('Logo não encontrado');
+    res
+      .set({
+        'Content-Type': logo.tipo,
+        'Content-Security-Policy': POLITICA_LOGO,
+        'X-Content-Type-Options': 'nosniff',
+        // O navegador guarda o logo por um dia e não volta a pedir.
+        'Cache-Control': 'public, max-age=86400',
+      })
+      .send(Buffer.from(logo.conteudo));
+  });
+
+  return rotas;
+}
+
+/** Situação de cada API externa, para o rodapé e os alertas da tela. */
+export function criarRotasFontes({ estado }: DependenciasRotas): Router {
+  const rotas = Router();
+  rotas.get('/', (_req, res) => {
+    res.json({ fontes: estado.listar() });
+  });
+  return rotas;
 }
 
 export function criarRotasTransacoes({ transacoes, agora }: DependenciasRotas): Router {
