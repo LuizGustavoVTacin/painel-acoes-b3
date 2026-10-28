@@ -9,10 +9,21 @@ import type {
 import type { AcaoCatalogo } from '../shared/selecao';
 import { ehInstanteISO } from '../shared/datas';
 import { normalizarTicker, type Ticker } from '../shared/ticker';
+import {
+  conferirDadosTransacao,
+  type CampoTransacao,
+  type DadosTransacao,
+  type ErrosDeCampo,
+  type Transacao,
+} from '../shared/transacao';
 
 /** Falha ao obter dados do servidor local, com uma mensagem pronta para a tela. */
 export class ErroApi extends Error {
-  constructor(mensagem: string) {
+  constructor(
+    mensagem: string,
+    /** Mensagem por campo do formulário, quando o servidor recusou dados digitados. */
+    readonly campos: ErrosDeCampo = {},
+  ) {
     super(mensagem);
     this.name = 'ErroApi';
   }
@@ -121,21 +132,40 @@ export function lerRespostaCotacoes(corpo: unknown): RespostaCotacoes {
 }
 
 /** Mensagem de erro que o próprio servidor local mandou ({ erro: "..." }), se houver. */
-async function mensagemDoServidor(resposta: Response): Promise<string | null> {
+const CAMPOS_TRANSACAO = new Set<CampoTransacao>([
+  'ticker',
+  'data',
+  'quantidade',
+  'precoUnitario',
+  'taxas',
+  'plataforma',
+]);
+
+/** Motivo da recusa que o próprio servidor local mandou ({ erro, campos }), se houver. */
+async function recusaDoServidor(resposta: Response): Promise<ErroApi | null> {
+  let corpo: unknown;
   try {
-    const corpo: unknown = await resposta.json();
-    return ehObjeto(corpo) && typeof corpo.erro === 'string' ? corpo.erro : null;
+    corpo = await resposta.json();
   } catch {
     return null;
   }
+  if (!ehObjeto(corpo) || typeof corpo.erro !== 'string') return null;
+  const campos: ErrosDeCampo = {};
+  if (ehObjeto(corpo.campos)) {
+    for (const [campo, mensagem] of Object.entries(corpo.campos)) {
+      if (CAMPOS_TRANSACAO.has(campo as CampoTransacao) && typeof mensagem === 'string') {
+        campos[campo as CampoTransacao] = mensagem;
+      }
+    }
+  }
+  return new ErroApi(corpo.erro, campos);
 }
 
 /**
- * Faz uma requisição ao servidor local e devolve o corpo em JSON, ainda não conferido.
- * Falhas de rede, de status e de JSON viram ErroApi; o cancelamento (signal) é repassado.
- * Um pedido recusado (4xx) mostra o motivo dado pelo servidor.
+ * Faz uma requisição ao servidor local. Falhas de rede e de status viram ErroApi; o
+ * cancelamento (signal) é repassado. Um pedido recusado (4xx) traz o motivo dado pelo servidor.
  */
-async function pedirJson(endereco: string, opcoes: RequestInit = {}): Promise<unknown> {
+async function pedir(endereco: string, opcoes: RequestInit = {}): Promise<Response> {
   const { signal } = opcoes;
   let resposta: Response;
   try {
@@ -148,9 +178,16 @@ async function pedirJson(endereco: string, opcoes: RequestInit = {}): Promise<un
     throw new ErroApi('Não foi possível falar com o servidor do dashboard');
   }
   if (!resposta.ok) {
-    const motivo = resposta.status < 500 ? await mensagemDoServidor(resposta) : null;
-    throw new ErroApi(motivo ?? `O servidor do dashboard respondeu com erro (${resposta.status})`);
+    const recusa = resposta.status < 500 ? await recusaDoServidor(resposta) : null;
+    throw recusa ?? new ErroApi(`O servidor do dashboard respondeu com erro (${resposta.status})`);
   }
+  return resposta;
+}
+
+/** Como `pedir`, devolvendo o corpo em JSON ainda não conferido (JSON inválido vira ErroApi). */
+async function pedirJson(endereco: string, opcoes: RequestInit = {}): Promise<unknown> {
+  const { signal } = opcoes;
+  const resposta = await pedir(endereco, opcoes);
   try {
     return await resposta.json();
   } catch (erro) {
@@ -210,4 +247,72 @@ export async function salvarSelecao(
     body: JSON.stringify({ tickers }),
   });
   return lerSelecao(corpo);
+}
+
+/** Datas de compras já salvas não são comparadas com "hoje": o relógio daqui pode diferir. */
+const SEM_LIMITE_DE_DATA = '9999-12-31';
+
+function lerTransacao(valor: unknown): Transacao | null {
+  if (
+    !ehObjeto(valor) ||
+    !(Number.isSafeInteger(valor.id) && (valor.id as number) > 0) ||
+    !ehInstante(valor.criadoEm) ||
+    !ehInstante(valor.atualizadoEm)
+  ) {
+    return descartar('compra', valor);
+  }
+  const conferida = conferirDadosTransacao(valor, SEM_LIMITE_DE_DATA);
+  if (!conferida.valida) return descartar('compra', valor);
+  return {
+    id: valor.id as number,
+    ...conferida.dados,
+    criadoEm: valor.criadoEm,
+    atualizadoEm: valor.atualizadoEm,
+  };
+}
+
+/** Confere o corpo de GET /api/transacoes; uma compra inválida é descartada sozinha. */
+export function lerListaTransacoes(corpo: unknown): Transacao[] {
+  if (!ehObjeto(corpo) || !Array.isArray(corpo.transacoes)) throw formatoInvalido();
+  return corpo.transacoes.map(lerTransacao).filter(presente);
+}
+
+/** Confere o corpo de POST/PUT /api/transacoes: a compra que ficou salva. */
+export function lerTransacaoSalva(corpo: unknown): Transacao {
+  const transacao = ehObjeto(corpo) ? lerTransacao(corpo.transacao) : null;
+  if (!transacao) throw formatoInvalido();
+  return transacao;
+}
+
+/** Todas as compras registradas, mais recentes primeiro. */
+export async function listarTransacoes(signal: AbortSignal): Promise<Transacao[]> {
+  return lerListaTransacoes(await pedirJson('/api/transacoes', { signal }));
+}
+
+const comoJson = (dados: DadosTransacao) => ({
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(dados),
+});
+
+export async function criarTransacao(
+  dados: DadosTransacao,
+  signal?: AbortSignal,
+): Promise<Transacao> {
+  return lerTransacaoSalva(
+    await pedirJson('/api/transacoes', { signal, method: 'POST', ...comoJson(dados) }),
+  );
+}
+
+export async function atualizarTransacao(
+  id: number,
+  dados: DadosTransacao,
+  signal?: AbortSignal,
+): Promise<Transacao> {
+  return lerTransacaoSalva(
+    await pedirJson(`/api/transacoes/${id}`, { signal, method: 'PUT', ...comoJson(dados) }),
+  );
+}
+
+export async function excluirTransacao(id: number, signal?: AbortSignal): Promise<void> {
+  await pedir(`/api/transacoes/${id}`, { signal, method: 'DELETE' });
 }

@@ -68,7 +68,7 @@ function linhas() {
 describe('MenuPrincipal', () => {
   afterEach(cleanup);
 
-  it('abre e fecha a lista de opções; registrar compras ainda está desabilitado', () => {
+  it('abre e fecha a lista de opções', () => {
     simularServidor();
     render(<MenuPrincipal aoSalvarSelecao={() => {}} />);
     const botao = screen.getByRole('button', { name: 'Menu' });
@@ -76,7 +76,7 @@ describe('MenuPrincipal', () => {
 
     abrirMenu();
     expect(botao).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('button', { name: /Registrar compras/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Registrar compras' })).toBeEnabled();
 
     abrirMenu();
     expect(screen.queryByRole('button', { name: 'Escolher ações' })).not.toBeInTheDocument();

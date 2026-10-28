@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  atualizarTransacao,
   buscarCatalogo,
+  criarTransacao,
+  excluirTransacao,
+  lerListaTransacoes,
+  listarTransacoes,
   buscarCotacoes,
   buscarSelecao,
   ErroApi,
@@ -247,5 +252,126 @@ describe('catálogo e seleção no servidor', () => {
     await expect(salvarSelecao(['BBAS3'])).rejects.toThrow(
       'O servidor do dashboard respondeu com erro (403)',
     );
+  });
+});
+
+const transacao = (extra: Record<string, unknown> = {}) => ({
+  id: 7,
+  ticker: 'BBAS3',
+  data: '2026-10-20',
+  quantidade: 100,
+  precoUnitario: 1738,
+  taxas: 490,
+  plataforma: 'Itaú Íon',
+  criadoEm: '2026-10-20T13:00:00.000Z',
+  atualizadoEm: '2026-10-20T13:00:00.000Z',
+  ...extra,
+});
+
+describe('lerListaTransacoes', () => {
+  it('aceita as compras do servidor', () => {
+    expect(lerListaTransacoes({ transacoes: [transacao()] })).toEqual([transacao()]);
+  });
+
+  it('recusa estrutura errada', () => {
+    expect(() => lerListaTransacoes({ compras: [] })).toThrow(ErroApi);
+  });
+
+  it.each([
+    ['id zero', { id: 0 }],
+    ['preço fracionado', { precoUnitario: 17.38 }],
+    ['ticker inválido', { ticker: 'bb' }],
+    ['data em formato brasileiro', { data: '20/10/2026' }],
+    ['sem plataforma', { plataforma: '' }],
+    ['criação sem horário', { criadoEm: 'ontem' }],
+  ])('descarta só a compra inválida: %s', (_caso, defeito) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const corpo = { transacoes: [transacao(defeito), transacao({ id: 8 })] };
+    expect(lerListaTransacoes(corpo)).toEqual([transacao({ id: 8 })]);
+  });
+
+  it('aceita compra com data futura para o relógio daqui (o servidor já validou)', () => {
+    const corpo = { transacoes: [transacao({ data: '2999-01-01' })] };
+    expect(lerListaTransacoes(corpo)).toHaveLength(1);
+  });
+});
+
+describe('compras no servidor', () => {
+  const dados = {
+    ticker: 'BBAS3',
+    data: '2026-10-20',
+    quantidade: 100,
+    precoUnitario: 1738,
+    taxas: 490,
+    plataforma: 'Itaú Íon',
+  };
+
+  it('listarTransacoes consulta /api/transacoes', async () => {
+    const fetchFalso = vi.fn(async () => Response.json({ transacoes: [transacao()] }));
+    vi.stubGlobal('fetch', fetchFalso);
+
+    await expect(listarTransacoes(new AbortController().signal)).resolves.toEqual([transacao()]);
+    expect(fetchFalso).toHaveBeenCalledWith('/api/transacoes', expect.anything());
+  });
+
+  it('criarTransacao envia POST com JSON e devolve a compra salva', async () => {
+    const fetchFalso = vi.fn(async () =>
+      Response.json({ transacao: transacao() }, { status: 201 }),
+    );
+    vi.stubGlobal('fetch', fetchFalso);
+
+    await expect(criarTransacao(dados)).resolves.toEqual(transacao());
+    const [endereco, opcoes] = fetchFalso.mock.calls[0] as unknown as [string, RequestInit];
+    expect(endereco).toBe('/api/transacoes');
+    expect(opcoes.method).toBe('POST');
+    expect(JSON.parse(opcoes.body as string)).toEqual(dados);
+  });
+
+  it('atualizarTransacao envia PUT para o id', async () => {
+    const fetchFalso = vi.fn(async () => Response.json({ transacao: transacao() }));
+    vi.stubGlobal('fetch', fetchFalso);
+
+    await atualizarTransacao(7, dados);
+    const [endereco, opcoes] = fetchFalso.mock.calls[0] as unknown as [string, RequestInit];
+    expect(endereco).toBe('/api/transacoes/7');
+    expect(opcoes.method).toBe('PUT');
+  });
+
+  it('excluirTransacao aceita a resposta 204 sem corpo', async () => {
+    const fetchFalso = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchFalso);
+
+    await expect(excluirTransacao(7)).resolves.toBeUndefined();
+    const [endereco, opcoes] = fetchFalso.mock.calls[0] as unknown as [string, RequestInit];
+    expect(endereco).toBe('/api/transacoes/7');
+    expect(opcoes.method).toBe('DELETE');
+  });
+
+  it('compra que sumiu (404) vira ErroApi com o motivo do servidor', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ erro: 'Transação não encontrada' }, { status: 404 })),
+    );
+    await expect(excluirTransacao(7)).rejects.toThrow(new ErroApi('Transação não encontrada'));
+  });
+
+  it('recusa com erros por campo traz cada mensagem, ignorando campos desconhecidos', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json(
+          {
+            erro: 'Verifique os campos destacados',
+            campos: { data: 'A data da compra não pode ser no futuro', senha: 'x', taxas: 3 },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    const erro = (await criarTransacao(dados).catch((e: unknown) => e)) as ErroApi;
+    expect(erro).toBeInstanceOf(ErroApi);
+    expect(erro.message).toBe('Verifique os campos destacados');
+    expect(erro.campos).toEqual({ data: 'A data da compra não pode ser no futuro' });
   });
 });

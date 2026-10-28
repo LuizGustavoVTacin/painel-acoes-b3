@@ -3,6 +3,12 @@ import { useEffect, useState } from 'react';
 export type Carga<T> =
   { situacao: 'carregando' } | { situacao: 'ok'; dados: T } | { situacao: 'erro' };
 
+/**
+ * Tempo máximo de espera nos painéis do menu. O catálogo pode esperar a brapi (que tem tempo
+ * limite próprio no servidor); passado isto, algo travou e o painel oferece tentar de novo.
+ */
+export const TEMPO_LIMITE_PAINEL_MS = 20 * 1000;
+
 /** Roda `tarefa` com um sinal que é cancelado por `controle` ou ao passar o tempo limite. */
 export async function comTempoLimite<T>(
   tarefa: (signal: AbortSignal) => Promise<T>,
@@ -18,13 +24,13 @@ export async function comTempoLimite<T>(
 }
 
 /**
- * Carrega dados do servidor local uma vez, com tempo limite. Devolve a carga e uma função
- * que tenta de novo — só se a última tentativa falhou; o que já carregou não é buscado outra vez.
+ * Carrega dados do servidor local uma vez, com tempo limite. Devolve a carga, uma função que
+ * tenta de novo só se a última tentativa falhou, e outra que recarrega mesmo o que já carregou.
  */
 export function useCarga<T>(
   buscar: (signal: AbortSignal) => Promise<T>,
   tempoLimiteMs: number,
-): [Carga<T>, () => void] {
+): [Carga<T>, () => void, () => void] {
   const [carga, setCarga] = useState<Carga<T>>({ situacao: 'carregando' });
   const [tentativa, setTentativa] = useState(0);
   const carregou = carga.situacao === 'ok';
@@ -47,11 +53,14 @@ export function useCarga<T>(
     };
   }, [buscar, tentativa, carregou, tempoLimiteMs]);
 
-  function tentarDeNovo(): void {
-    if (carga.situacao !== 'erro') return;
+  function recarregar(): void {
     setCarga({ situacao: 'carregando' });
     setTentativa((n) => n + 1);
   }
 
-  return [carga, tentarDeNovo];
+  function tentarDeNovo(): void {
+    if (carga.situacao === 'erro') recarregar();
+  }
+
+  return [carga, tentarDeNovo, recarregar];
 }

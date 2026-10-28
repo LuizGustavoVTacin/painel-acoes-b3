@@ -1,24 +1,9 @@
-import type { DataISO } from '../../shared/datas.js';
-import type { Centavos } from '../../shared/dinheiro.js';
 import type { Compra } from '../../shared/posicao.js';
 import type { Ticker } from '../../shared/ticker.js';
+import type { DadosTransacao, Transacao } from '../../shared/transacao.js';
 import type { Banco } from './conexao.js';
 
-/** Dados que o usuário informa ao registrar ou editar uma compra. */
-export interface DadosTransacao {
-  ticker: Ticker;
-  data: DataISO;
-  quantidade: number;
-  precoUnitario: Centavos;
-  taxas: Centavos;
-  plataforma: string;
-}
-
-export interface Transacao extends DadosTransacao {
-  id: number;
-  criadoEm: string;
-  atualizadoEm: string;
-}
+export type { DadosTransacao, Transacao };
 
 interface LinhaTransacao {
   id: number;

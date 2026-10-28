@@ -1,15 +1,17 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { EscolhaAcoes } from './EscolhaAcoes';
+import { RegistroCompras } from './RegistroCompras';
 
 interface PropsMenu {
-  /** Chamado depois que uma nova seleção de ações foi (ou pode ter sido) salva. */
+  /** Chamado depois que a seleção de ações da grade mudou (ou pode ter mudado). */
   aoSalvarSelecao: () => void;
 }
 
-/** Menu do canto superior direito: escolher as ações e (na próxima etapa) registrar compras. */
+/** Menu do canto superior direito: escolher as ações da grade e registrar compras. */
 export function MenuPrincipal({ aoSalvarSelecao }: PropsMenu) {
   const [aberto, setAberto] = useState(false);
-  const [escolhendo, setEscolhendo] = useState(false);
+  /** Painel aberto pelo menu, se houver. */
+  const [painel, setPainel] = useState<'escolha' | 'compras' | null>(null);
   const raiz = useRef<HTMLDivElement>(null);
   const botao = useRef<HTMLButtonElement>(null);
   const idOpcoes = useId();
@@ -17,10 +19,10 @@ export function MenuPrincipal({ aoSalvarSelecao }: PropsMenu) {
   const devolverFoco = useRef(false);
 
   useEffect(() => {
-    if (escolhendo || !devolverFoco.current) return;
+    if (painel || !devolverFoco.current) return;
     devolverFoco.current = false;
     botao.current?.focus();
-  }, [escolhendo]);
+  }, [painel]);
 
   // Clique fora do menu fecha a lista de opções.
   useEffect(() => {
@@ -37,14 +39,14 @@ export function MenuPrincipal({ aoSalvarSelecao }: PropsMenu) {
     botao.current?.focus();
   }
 
-  function abrirEscolha(): void {
+  function abrir(qual: 'escolha' | 'compras'): void {
     setAberto(false);
-    setEscolhendo(true);
+    setPainel(qual);
   }
 
-  function fecharEscolha(): void {
+  function fecharPainel(): void {
     devolverFoco.current = true;
-    setEscolhendo(false);
+    setPainel(null);
   }
 
   return (
@@ -68,26 +70,29 @@ export function MenuPrincipal({ aoSalvarSelecao }: PropsMenu) {
       {aberto && (
         <ul id={idOpcoes} className="menu-opcoes">
           <li>
-            <button type="button" onClick={abrirEscolha}>
+            <button type="button" onClick={() => abrir('escolha')}>
               Escolher ações
             </button>
           </li>
           <li>
-            <button type="button" disabled>
-              Registrar compras <span className="menu-em-breve">(em breve)</span>
+            <button type="button" onClick={() => abrir('compras')}>
+              Registrar compras
             </button>
           </li>
         </ul>
       )}
-      {escolhendo && (
+      {painel === 'escolha' && (
         <EscolhaAcoes
-          aoFechar={fecharEscolha}
+          aoFechar={fecharPainel}
           aoSalvar={() => {
-            fecharEscolha();
+            fecharPainel();
             aoSalvarSelecao();
           }}
           aoTalvezSalvo={aoSalvarSelecao}
         />
+      )}
+      {painel === 'compras' && (
+        <RegistroCompras aoFechar={fecharPainel} aoMudarGrade={aoSalvarSelecao} />
       )}
     </div>
   );

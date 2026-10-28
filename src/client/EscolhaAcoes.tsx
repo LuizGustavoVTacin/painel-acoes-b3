@@ -1,9 +1,10 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { LIMITE_ACOES_SELECIONADAS, type AcaoCatalogo } from '../shared/selecao';
 import type { Ticker } from '../shared/ticker';
 import { buscarCatalogo, buscarSelecao, ErroApi, salvarSelecao } from './api';
 import { alternarAcao, montarListaEscolha, selecaoFinal } from './escolha';
-import { comTempoLimite, useCarga } from './useCarga';
+import { Painel } from './Painel';
+import { comTempoLimite, TEMPO_LIMITE_PAINEL_MS, useCarga } from './useCarga';
 
 interface PropsEscolha {
   aoFechar: () => void;
@@ -13,12 +14,6 @@ interface PropsEscolha {
   aoTalvezSalvo?: () => void;
   tempoLimiteMs?: number;
 }
-
-/**
- * O catálogo pode esperar a brapi (que tem tempo limite próprio no servidor); passado isto,
- * algo travou e o painel oferece "Tentar de novo" em vez de carregar para sempre.
- */
-export const TEMPO_LIMITE_ESCOLHA_MS = 20 * 1000;
 
 const iguais = (a: readonly Ticker[], b: readonly Ticker[]) =>
   a.length === b.length && a.every((ticker, i) => ticker === b[i]);
@@ -34,28 +29,6 @@ async function buscarCatalogoPreenchido(signal: AbortSignal): Promise<AcaoCatalo
 }
 
 /**
- * Mantém o Tab dentro do painel: do último elemento volta ao primeiro, e vice-versa.
- * Com o foco no próprio painel (clique numa área sem botão), o Tab vai para o primeiro.
- */
-function prenderFoco(evento: KeyboardEvent<HTMLElement>): void {
-  const focaveis = [
-    ...evento.currentTarget.querySelectorAll<HTMLElement>(
-      'input:not(:disabled), button:not(:disabled)',
-    ),
-  ];
-  if (focaveis.length === 0) return;
-  const posicao = focaveis.indexOf(document.activeElement as HTMLElement);
-  const ultima = focaveis.length - 1;
-  if (evento.shiftKey && posicao <= 0) {
-    evento.preventDefault();
-    focaveis[ultima].focus();
-  } else if (!evento.shiftKey && (posicao === -1 || posicao === ultima)) {
-    evento.preventDefault();
-    focaveis[0].focus();
-  }
-}
-
-/**
  * Painel para escolher as ações da grade. As marcações são um rascunho até "Salvar":
  * cada clique não dispara uma busca de cotações.
  */
@@ -63,7 +36,7 @@ export function EscolhaAcoes({
   aoFechar,
   aoSalvar,
   aoTalvezSalvo,
-  tempoLimiteMs = TEMPO_LIMITE_ESCOLHA_MS,
+  tempoLimiteMs = TEMPO_LIMITE_PAINEL_MS,
 }: PropsEscolha) {
   const [salvas, recarregarSalvas] = useCarga(buscarSelecao, tempoLimiteMs);
   const [catalogo, recarregarCatalogo] = useCarga(buscarCatalogoPreenchido, tempoLimiteMs);
@@ -73,21 +46,12 @@ export function EscolhaAcoes({
   const [salvando, setSalvando] = useState(false);
   const [erroAoSalvar, setErroAoSalvar] = useState<string | null>(null);
   const campoBusca = useRef<HTMLInputElement>(null);
-  const painel = useRef<HTMLElement>(null);
   const montado = useRef(true);
-  const idTitulo = useId();
 
   useEffect(() => {
     montado.current = true;
-    campoBusca.current?.focus();
-    // O foco que escapa do painel (ex.: Tab vindo da barra do navegador) volta para a busca.
-    function aoFocar(evento: FocusEvent): void {
-      if (!painel.current?.contains(evento.target as Node)) campoBusca.current?.focus();
-    }
-    document.addEventListener('focusin', aoFocar);
     return () => {
       montado.current = false;
-      document.removeEventListener('focusin', aoFocar);
     };
   }, []);
 
@@ -139,21 +103,6 @@ export function EscolhaAcoes({
     }
   }
 
-  function aoTeclar(evento: KeyboardEvent<HTMLElement>): void {
-    if (evento.key === 'Tab') {
-      prenderFoco(evento);
-      return;
-    }
-    if (evento.key !== 'Escape' || salvando) return;
-    // Com texto na busca, o Esc só limpa a busca; não descarta as marcações.
-    if (evento.target === campoBusca.current && busca !== '') {
-      evento.preventDefault();
-      setBusca('');
-      return;
-    }
-    aoFechar();
-  }
-
   const cheio = marcadas.length >= LIMITE_ACOES_SELECIONADAS;
   const marcadasSet = new Set(marcadas);
   const houveMudanca =
@@ -203,78 +152,67 @@ export function EscolhaAcoes({
   }
 
   return (
-    <>
-      {/* Fundo que bloqueia a grade enquanto o painel está aberto. */}
-      <div
-        className="escolha-fundo"
-        aria-hidden="true"
-        onMouseDown={(evento) => evento.preventDefault()}
+    <Painel titulo="Escolher ações" aoFechar={aoFechar} focoInicial={campoBusca} travado={salvando}>
+      <input
+        ref={campoBusca}
+        className="escolha-busca"
+        type="search"
+        placeholder="Buscar por código ou nome"
+        aria-label="Buscar ação"
+        value={busca}
+        readOnly={salvando}
+        onChange={(evento) => setBusca(evento.target.value)}
+        onKeyDown={(evento) => {
+          // Com texto na busca, o Esc só limpa a busca; não descarta as marcações.
+          if (evento.key === 'Escape' && busca !== '' && !salvando) {
+            evento.preventDefault();
+            setBusca('');
+          }
+        }}
       />
-      <section
-        ref={painel}
-        tabIndex={-1}
-        className="escolha"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={idTitulo}
-        onKeyDown={aoTeclar}
-      >
-        <h2 id={idTitulo}>Escolher ações</h2>
 
-        <input
-          ref={campoBusca}
-          className="escolha-busca"
-          type="search"
-          placeholder="Buscar por código ou nome"
-          aria-label="Buscar ação"
-          value={busca}
-          readOnly={salvando}
-          onChange={(evento) => setBusca(evento.target.value)}
-        />
+      {tickersSalvos && (
+        <p className="escolha-contador" aria-live="polite">
+          {marcadas.length} de {LIMITE_ACOES_SELECIONADAS} selecionadas
+          {cheio && ' · limite atingido'}
+        </p>
+      )}
 
-        {tickersSalvos && (
-          <p className="escolha-contador" aria-live="polite">
-            {marcadas.length} de {LIMITE_ACOES_SELECIONADAS} selecionadas
-            {cheio && ' · limite atingido'}
-          </p>
-        )}
-
-        {aviso && (
-          <div role="alert" className="erro escolha-aviso">
-            {aviso}{' '}
-            <button type="button" onClick={tentarDeNovo}>
-              Tentar de novo
-            </button>
-          </div>
-        )}
-
-        <div className="escolha-rolagem">
-          {lista}
-          {tickersSalvos && catalogo.situacao === 'carregando' && (
-            <p role="status">Carregando a lista de ações da B3…</p>
-          )}
-        </div>
-
-        {erroAoSalvar && (
-          <p role="alert" className="erro">
-            {erroAoSalvar}
-          </p>
-        )}
-
-        <div className="escolha-botoes">
-          <button type="button" onClick={aoFechar} disabled={salvando}>
-            Cancelar
-          </button>
-          <button
-            type="button"
-            className="botao-principal"
-            disabled={!houveMudanca || salvando}
-            onClick={() => void salvar()}
-          >
-            {salvando ? 'Salvando…' : 'Salvar'}
+      {aviso && (
+        <div role="alert" className="erro painel-aviso">
+          {aviso}{' '}
+          <button type="button" onClick={tentarDeNovo}>
+            Tentar de novo
           </button>
         </div>
-      </section>
-    </>
+      )}
+
+      <div className="escolha-rolagem">
+        {lista}
+        {tickersSalvos && catalogo.situacao === 'carregando' && (
+          <p role="status">Carregando a lista de ações da B3…</p>
+        )}
+      </div>
+
+      {erroAoSalvar && (
+        <p role="alert" className="erro">
+          {erroAoSalvar}
+        </p>
+      )}
+
+      <div className="painel-botoes">
+        <button type="button" onClick={aoFechar} disabled={salvando}>
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className="botao-principal"
+          disabled={!houveMudanca || salvando}
+          onClick={() => void salvar()}
+        >
+          {salvando ? 'Salvando…' : 'Salvar'}
+        </button>
+      </div>
+    </Painel>
   );
 }
