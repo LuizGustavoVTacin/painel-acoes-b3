@@ -159,7 +159,7 @@
               <strong>Destaque dos vizinhos</strong>
               <span>Mouse, toque e teclado.</span>
             </li>
-            <li>
+            <li class="feita">
               <strong>Menu e escolha das ações</strong>
               <span>Lista com caixas de seleção e limite de 50.</span>
             </li>
@@ -180,9 +180,9 @@
           <div class="aviso aviso-dica">
             <span aria-hidden="true">ℹ</span>
             <p>
-              O servidor, a lógica, a grade de cotações com o rodapé e o destaque dos vizinhos já
-              estão prontos e testados; menu e formulários chegam nas próximas etapas. Os capítulos
-              marcam o que já existe com
+              O servidor, a lógica, a grade de cotações com o rodapé, o destaque dos vizinhos e o
+              menu de escolha das ações já estão prontos e testados; a tela de compras e as setas
+              chegam nas próximas etapas. Os capítulos marcam o que já existe com
               <span class="etiqueta etiqueta-feito">pronto</span> e o que vem depois com
               <span class="etiqueta etiqueta-pendente">próximas etapas</span>.
             </p>
@@ -400,11 +400,11 @@ docs/            Esta documentação</code></pre>
           <span class="capitulo">Capítulo 04 · Funcionalidades</span>
           <h2 class="titulo">
             A tela do dashboard
-            <span class="etiqueta etiqueta-feito">grade, rodapé e destaque prontos</span>
+            <span class="etiqueta etiqueta-feito">grade, rodapé, destaque e menu prontos</span>
           </h2>
           <p class="resumo">
-            Grade, atualização automática, rodapé e destaque já funcionam; menu e setas chegam nas
-            próximas etapas.
+            Grade, atualização automática, rodapé, destaque e escolha das ações já funcionam; a tela
+            de compras e as setas chegam nas próximas etapas.
           </p>
 
           <h3>Os quadrados</h3>
@@ -538,11 +538,92 @@ docs/            Esta documentação</code></pre>
             </li>
           </ul>
 
-          <h3>Menu <span class="etiqueta etiqueta-pendente">próximas etapas</span></h3>
+          <h3>Menu e escolha das ações <span class="etiqueta etiqueta-feito">pronto</span></h3>
           <p>
-            No canto superior direito: escolher ações (caixas de seleção, máximo de 50 — as demais
-            ficam desabilitadas ao atingir o limite) e registrar compras. Até lá, sem ações
-            escolhidas, a tela mostra “Nenhuma ação selecionada”.
+            O botão <strong>☰ Menu</strong>, no canto superior direito, tem duas opções:
+            <strong>Escolher ações</strong> e <strong>Registrar compras</strong> (desabilitada até a
+            etapa 8). Sem nenhuma ação escolhida, a tela mostra “Nenhuma ação selecionada” e indica
+            o menu.
+          </p>
+          <ol>
+            <li>
+              Abra <strong>Menu → Escolher ações</strong>. Um painel abre à direita (a tela toda no
+              celular) com o campo de busca já em foco.
+            </li>
+            <li>
+              Busque por código ou nome, sem se preocupar com acentos: “itau” encontra Itaú
+              Unibanco.
+            </li>
+            <li>
+              Marque e desmarque as caixas. O contador mostra “N de 50 selecionadas”; ao chegar a
+              50, as caixas desmarcadas ficam desabilitadas até você desmarcar alguma.
+            </li>
+            <li>
+              Clique em <strong>Salvar</strong>. As cotações são buscadas na hora e as novas ações
+              entram no fim da grade, na ordem em que foram marcadas.
+            </li>
+          </ol>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Situação</th>
+                  <th>O que o painel faz</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Marcações antes de salvar</td>
+                  <td>
+                    São um rascunho: <strong>Cancelar</strong> ou <kbd>Esc</kbd> descartam. Assim
+                    cada clique não gasta uma chamada ao Yahoo.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Ordem da grade</td>
+                  <td>
+                    As ações já salvas ficam no topo da lista e mantêm o lugar na grade; desmarcar e
+                    marcar de novo não muda a ordem.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Ação salva que saiu da lista da B3</td>
+                  <td>
+                    Continua na lista, marcada, com “fora da lista atual da B3”, para desmarcar.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Lista de ações não carrega</td>
+                  <td>
+                    Mostra as já escolhidas (com “nome indisponível”), avisa e oferece
+                    <strong>Tentar de novo</strong>. Vale também quando a brapi ainda não foi
+                    baixada nenhuma vez. A lista é pedida à brapi no máximo a cada 15 minutos, então
+                    novas tentativas nesse intervalo repetem o aviso.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Servidor demora</td>
+                  <td>
+                    Depois de 20 s, carregar ou salvar desiste e oferece tentar de novo. Se foi o
+                    salvamento, avisa que ele pode ter sido gravado e a grade confere na hora.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Salvar falha</td>
+                  <td>Mostra o motivo e mantém as marcações para tentar de novo.</td>
+                </tr>
+                <tr>
+                  <td>Salvando</td>
+                  <td>Caixas, busca, Cancelar e <kbd>Esc</kbd> ficam travados até terminar.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Teclado: <kbd>Tab</kbd> circula só dentro do painel (o foco nunca escapa para a grade,
+            nem depois de clicar em Salvar); <kbd>Esc</kbd> com texto na busca limpa a busca, e com
+            a busca vazia fecha o painel. A lista mostra código e nome, sem logo: o catálogo tem
+            centenas de ações, e rolar pediria centenas de logos à brapi.
           </p>
 
           <nav class="navegacao" aria-label="Navegação entre capítulos">
@@ -1357,10 +1438,6 @@ docs/            Esta documentação</code></pre>
               </thead>
               <tbody>
                 <tr>
-                  <td>7</td>
-                  <td>Menu com a lista de ações e caixas de seleção (limite de 50).</td>
-                </tr>
-                <tr>
                   <td>8</td>
                   <td>Tela de compras: cadastrar, editar e excluir.</td>
                 </tr>
@@ -1469,7 +1546,7 @@ docs/            Esta documentação</code></pre>
         </section>
 
         <footer class="rodape">
-          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 6.</p>
+          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 7.</p>
         </footer>
       </main>
     </div>
