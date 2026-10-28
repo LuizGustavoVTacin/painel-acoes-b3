@@ -163,7 +163,7 @@
               <strong>Menu e escolha das ações</strong>
               <span>Lista com caixas de seleção e limite de 50.</span>
             </li>
-            <li>
+            <li class="feita">
               <strong>Tela de compras</strong>
               <span>Cadastrar, editar e excluir.</span>
             </li>
@@ -180,9 +180,9 @@
           <div class="aviso aviso-dica">
             <span aria-hidden="true">ℹ</span>
             <p>
-              O servidor, a lógica, a grade de cotações com o rodapé, o destaque dos vizinhos e o
-              menu de escolha das ações já estão prontos e testados; a tela de compras e as setas
-              chegam nas próximas etapas. Os capítulos marcam o que já existe com
+              O servidor, a lógica, a grade de cotações com o rodapé, o destaque dos vizinhos, o
+              menu de escolha das ações e a tela de compras já estão prontos e testados; os filtros
+              do menu e as setas chegam nas próximas etapas. Os capítulos marcam o que já existe com
               <span class="etiqueta etiqueta-feito">pronto</span> e o que vem depois com
               <span class="etiqueta etiqueta-pendente">próximas etapas</span>.
             </p>
@@ -400,11 +400,13 @@ docs/            Esta documentação</code></pre>
           <span class="capitulo">Capítulo 04 · Funcionalidades</span>
           <h2 class="titulo">
             A tela do dashboard
-            <span class="etiqueta etiqueta-feito">grade, rodapé, destaque e menu prontos</span>
+            <span class="etiqueta etiqueta-feito"
+              >grade, rodapé, destaque, menu e compras prontos</span
+            >
           </h2>
           <p class="resumo">
-            Grade, atualização automática, rodapé, destaque e escolha das ações já funcionam; a tela
-            de compras e as setas chegam nas próximas etapas.
+            Grade, atualização automática, rodapé, destaque, escolha das ações e compras já
+            funcionam; as setas chegam na etapa 9.
           </p>
 
           <h3>Os quadrados</h3>
@@ -541,9 +543,9 @@ docs/            Esta documentação</code></pre>
           <h3>Menu e escolha das ações <span class="etiqueta etiqueta-feito">pronto</span></h3>
           <p>
             O botão <strong>☰ Menu</strong>, no canto superior direito, tem duas opções:
-            <strong>Escolher ações</strong> e <strong>Registrar compras</strong> (desabilitada até a
-            etapa 8). Sem nenhuma ação escolhida, a tela mostra “Nenhuma ação selecionada” e indica
-            o menu.
+            <strong>Escolher ações</strong> e <strong>Registrar compras</strong> (ver
+            <a href="#compras">Compras e preço médio</a>). Sem nenhuma ação escolhida, a tela mostra
+            “Nenhuma ação selecionada” e indica o menu.
           </p>
           <ol>
             <li>
@@ -636,10 +638,93 @@ docs/            Esta documentação</code></pre>
         <section id="compras">
           <span class="capitulo">Capítulo 05 · Funcionalidades</span>
           <h2 class="titulo">
-            Compras e preço médio <span class="etiqueta etiqueta-feito">pronto no servidor</span>
+            Compras e preço médio <span class="etiqueta etiqueta-feito">pronto</span>
           </h2>
           <p class="resumo">
-            Cada compra fica registrada no banco local e pode ser editada ou excluída.
+            Cada compra fica registrada no banco local e pode ser editada ou excluída pelo menu.
+          </p>
+
+          <h3>
+            Na tela: Menu → Registrar compras <span class="etiqueta etiqueta-feito">pronto</span>
+          </h3>
+          <ol>
+            <li>
+              Preencha <strong>Código</strong> (com sugestões do catálogo),
+              <strong>Data</strong> (já vem com hoje, em dd/mm/aaaa), <strong>Quantidade</strong>,
+              <strong>Preço unitário</strong> e <strong>Taxas</strong> no formato 1.234,56, e a
+              <strong>Plataforma</strong> (sugere as que você já usou, além de Itaú Íon e BTG).
+            </li>
+            <li>O total da compra (quantidade × preço + taxas) aparece enquanto você digita.</li>
+            <li>
+              <strong>Registrar compra</strong> grava e recomeça o formulário mantendo a data e a
+              plataforma, para lançar várias compras do mesmo dia.
+            </li>
+          </ol>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Situação</th>
+                  <th>O que o painel faz</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Campo errado</td>
+                  <td>
+                    Mostra o motivo embaixo do campo, leva o foco até ele e mantém o que foi
+                    digitado. As regras são as mesmas do servidor (o código é compartilhado).
+                  </td>
+                </tr>
+                <tr>
+                  <td>Ação sem quadrado na grade</td>
+                  <td>
+                    Depois de registrar: “BBAS3 não está na grade” com o botão
+                    <strong>Adicionar à grade</strong> (a seleção é relida na hora; com 50 ações,
+                    explica como abrir espaço).
+                  </td>
+                </tr>
+                <tr>
+                  <td>Código fora da lista da B3</td>
+                  <td>
+                    Aviso no campo antes de registrar (provável erro de digitação, ex.: BBSA3), sem
+                    bloquear; a ação não é oferecida à grade.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Editar</td>
+                  <td>
+                    Carrega a compra no formulário (“Salvar alterações” / “Cancelar edição”); a
+                    linha fica destacada.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Excluir</td>
+                  <td>
+                    Pergunta na própria linha (“Excluir esta compra?” Sim / Não). <kbd>Esc</kbd>
+                    desiste só da pergunta.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Compra já excluída (outra aba)</td>
+                  <td>Excluir só tira a linha; editar sai da edição e avisa.</td>
+                </tr>
+                <tr>
+                  <td>Servidor demora</td>
+                  <td>
+                    Depois de 20 s avisa que a gravação pode ter acontecido e busca a lista de novo,
+                    para você conferir antes de repetir.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Abaixo do formulário: filtro por código, <strong>resumo por ação</strong> (quantidade,
+            preço médio e total investido) e a lista de compras, mais recentes primeiro. Em telas
+            estreitas cada compra vira um cartão. Depois de cada gravação a lista é buscada de novo
+            no servidor, que é sempre a referência; se essa busca falhar, a lista atual continua na
+            tela com o aviso “pode estar desatualizada” e um botão para tentar de novo.
           </p>
 
           <h3>O que é guardado</h3>
@@ -1438,8 +1523,11 @@ docs/            Esta documentação</code></pre>
               </thead>
               <tbody>
                 <tr>
-                  <td>8</td>
-                  <td>Tela de compras: cadastrar, editar e excluir.</td>
+                  <td>8b</td>
+                  <td>
+                    Filtros no menu de escolha: por setor, em alta / em baixa no dia (variação da
+                    brapi) e “só as que comprei”; esconder ações que saíram da bolsa.
+                  </td>
                 </tr>
                 <tr>
                   <td>9</td>
@@ -1458,6 +1546,18 @@ docs/            Esta documentação</code></pre>
             <li>
               Conferir, com o pregão aberto, se o preço da listagem da brapi muda durante o dia ou
               só no fechamento.
+            </li>
+            <li>
+              Fechar o painel de compras (ou clicar em Editar) com um formulário pela metade
+              descarta o que foi digitado, sem perguntar.
+            </li>
+            <li>
+              Excluir trata qualquer resposta 404 como “já excluída”; com um servidor de outra
+              versão (rota diferente), a exclusão pareceria feita sem ter sido.
+            </li>
+            <li>
+              Uma compra que a tela não consiga ler é deixada de fora da lista só com um aviso no
+              console (o servidor grava com as mesmas regras, então não deve acontecer).
             </li>
             <li>
               A lista de ações sem cotação no Yahoo fica em memória: esvazia ao reiniciar o app até
@@ -1546,7 +1646,7 @@ docs/            Esta documentação</code></pre>
         </section>
 
         <footer class="rodape">
-          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 7.</p>
+          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 8.</p>
         </footer>
       </main>
     </div>
