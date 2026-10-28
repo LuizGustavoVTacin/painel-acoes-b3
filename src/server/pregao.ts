@@ -56,8 +56,14 @@ function projetarParaHoje(pregao: Pregao, agora: Date): Pregao | null {
 
 export function situacaoDoPregao(pregao: Pregao | undefined, agora: Date): SituacaoPregao {
   const instante = agora.toISOString();
-  const conhecido = pregao ?? (ehDiaUtil(agora) ? pregaoHabitual(agora) : undefined);
-  if (!conhecido) return 'fechado';
+  if (!pregao) {
+    // Sem confirmação do Yahoo, o horário habitual pode ser feriado: situação desconhecida.
+    const habitual = pregaoHabitual(agora);
+    const fimDoLeilao = somar(habitual.fim, APOS_FECHAMENTO_MS);
+    const naJanela = habitual.inicio <= instante && instante < fimDoLeilao;
+    return ehDiaUtil(agora) && naJanela ? 'desconhecido' : 'fechado';
+  }
+  const conhecido = pregao;
   if (conhecido.inicio <= instante && instante < conhecido.fim) return 'aberto';
   const fimDoLeilao = somar(conhecido.fim, APOS_FECHAMENTO_MS);
   if (conhecido.fim <= instante && instante < fimDoLeilao) return 'leilao';

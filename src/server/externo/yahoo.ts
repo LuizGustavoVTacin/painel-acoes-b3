@@ -68,7 +68,7 @@ function lerPregao(periodo: unknown): Pregao | null {
 function lerItem(
   item: unknown,
   pedidos: ReadonlySet<Ticker>,
-): { estrutura: boolean; comMeta: boolean; cotacao: CotacaoYahoo | null } {
+): { estrutura: boolean; comMeta: boolean; comErro: boolean; cotacao: CotacaoYahoo | null } {
   const { symbol, response } = (item ?? {}) as { symbol?: unknown; response?: unknown };
   const meta = Array.isArray(response)
     ? (response[0] as { meta?: Record<string, unknown> } | undefined)?.meta
@@ -77,25 +77,32 @@ function lerItem(
   const estrutura =
     typeof symbol === 'string' && symbol.endsWith(SUFIXO_B3) && Array.isArray(response);
   const comMeta = typeof meta === 'object' && meta !== null && 'currency' in meta;
-  if (!estrutura || !comMeta) return { estrutura, comMeta, cotacao: null };
+  // Ação desconhecida ou com problema: o Yahoo responde com um campo "error".
+  const comErro =
+    Array.isArray(response) &&
+    typeof response[0] === 'object' &&
+    response[0] !== null &&
+    'error' in response[0];
+  if (!estrutura || !comMeta) return { estrutura, comMeta, comErro, cotacao: null };
 
   const ticker = normalizarTicker(symbol.slice(0, -SUFIXO_B3.length));
   const preco = meta.regularMarketPrice;
   if (!ticker || !pedidos.has(ticker) || meta.currency !== 'BRL') {
-    return { estrutura, comMeta, cotacao: null };
+    return { estrutura, comMeta, comErro, cotacao: null };
   }
-  if (typeof preco !== 'number' || !(preco > 0)) return { estrutura, comMeta, cotacao: null };
+  if (typeof preco !== 'number' || !(preco > 0))
+    return { estrutura, comMeta, comErro, cotacao: null };
   let precoCentavos: Centavos;
   try {
     precoCentavos = reaisParaCentavos(preco);
   } catch {
-    return { estrutura, comMeta, cotacao: null };
+    return { estrutura, comMeta, comErro, cotacao: null };
   }
   const negociadoEm = lerInstante(meta.regularMarketTime);
-  if (precoCentavos <= 0 || !negociadoEm) return { estrutura, comMeta, cotacao: null };
+  if (precoCentavos <= 0 || !negociadoEm) return { estrutura, comMeta, comErro, cotacao: null };
 
   const pregao = lerPregao(meta.currentTradingPeriod);
-  return { estrutura, comMeta, cotacao: { ticker, precoCentavos, negociadoEm, pregao } };
+  return { estrutura, comMeta, comErro, cotacao: { ticker, precoCentavos, negociadoEm, pregao } };
 }
 
 /**
@@ -110,15 +117,16 @@ export function interpretarSpark(json: unknown, pedidos: readonly Ticker[]): Cot
   const conjunto = new Set(pedidos);
   const cotacoes = new Map<Ticker, CotacaoYahoo>();
   let reconhecidos = 0;
-  let comDados = 0;
+  let semDadosNemErro = 0;
   for (const item of resultado) {
-    const { estrutura, comMeta, cotacao } = lerItem(item, conjunto);
+    const { estrutura, comMeta, comErro, cotacao } = lerItem(item, conjunto);
     if (estrutura) reconhecidos++;
-    if (comMeta) comDados++;
+    if (estrutura && !comMeta && !comErro) semDadosNemErro++;
     if (cotacao && !cotacoes.has(cotacao.ticker)) cotacoes.set(cotacao.ticker, cotacao);
   }
-  // Uma ação sozinha sem dados (suspensa, com erro) é normal; várias de uma vez, não.
-  if (resultado.length > 0 && (reconhecidos === 0 || (reconhecidos >= 2 && comDados === 0))) {
+  // Ação sem preço (suspensa) ou com erro (desconhecida) é normal; item sem dados e sem erro
+  // indica que o Yahoo mudou o formato.
+  if (resultado.length > 0 && (reconhecidos === 0 || semDadosNemErro > 0)) {
     throw formatoAlterado('nenhuma cotação reconhecida');
   }
   return [...cotacoes.values()];

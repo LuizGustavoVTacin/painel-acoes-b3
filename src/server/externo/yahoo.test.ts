@@ -97,6 +97,21 @@ describe('interpretarSpark', () => {
     expect(interpretarSpark({ spark: { result: [item] } }, ['XXXX3'])).toEqual([]);
   });
 
+  it('várias ações desconhecidas no mesmo lote (com erro) não são mudança de formato', () => {
+    const erro = (t: string) => ({
+      symbol: `${t}.SA`,
+      response: [{ error: { code: 'Not Found' } }],
+    });
+    expect(
+      interpretarSpark({ spark: { result: [erro('ELET3'), erro('XXXX3')] } }, ['ELET3', 'XXXX3']),
+    ).toEqual([]);
+  });
+
+  it('uma só ação sem dados e sem erro já indica mudança de formato', () => {
+    const item = { symbol: 'BBAS3.SA', response: [{ dados: {} }] };
+    expect(() => interpretarSpark({ spark: { result: [item] } }, ['BBAS3'])).toThrow(/formato/);
+  });
+
   it('várias ações sem nenhum dado de cotação indicam mudança de formato', () => {
     const semDados = (t: string) => ({ symbol: `${t}.SA`, response: [{ dados: {} }] });
     expect(() =>

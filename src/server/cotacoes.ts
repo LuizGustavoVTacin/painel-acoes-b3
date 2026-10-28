@@ -15,7 +15,8 @@ const ATUALIZACOES_PERDIDAS_PARA_ALERTA = 2;
 /** O preço da brapi só substitui um do Yahoo que esteja sem atualizar há mais que isso. */
 const IDADE_MINIMA_PARA_RESERVA_MS = 30 * 60 * 1000;
 /** Pausa mínima entre o fim de uma rodada de chamadas ao Yahoo e o início da próxima. */
-export const PAUSA_ENTRE_RODADAS_YAHOO_MS = 10 * 1000;
+/** Menor que o tempo máximo da rota (8 s), para uma ação recém-marcada sair na resposta. */
+export const PAUSA_ENTRE_RODADAS_YAHOO_MS = 5 * 1000;
 
 export type FonteCotacao = 'yahoo' | 'brapi';
 
@@ -102,6 +103,9 @@ export function criarServicoCotacoes({
    * chegam durante uma rodada esperam e só buscam o que continuar vencido.
    */
   let filaYahoo: Promise<void> = Promise.resolve();
+  /** Próxima rodada ainda não iniciada; junta as ações de todos os pedidos que chegam. */
+  let rodadaPendente: Promise<void> | null = null;
+  const acoesPendentes = new Set<Ticker>();
   let fimDaUltimaRodada: string | undefined;
 
   const lerCotacao = (ticker: Ticker) => buscarCotacao.get(ticker) as LinhaCotacao | undefined;
@@ -142,16 +146,19 @@ export function criarServicoCotacoes({
   }
 
   /** Busca as vencidas em lotes. Se um lote falhar, guarda o que os anteriores trouxeram. */
-  async function buscarNoYahoo(vencidas: readonly Ticker[], momento: Date): Promise<void> {
+  /** Devolve se chegou a chamar o Yahoo. */
+  async function buscarNoYahoo(vencidas: readonly Ticker[], momento: Date): Promise<boolean> {
     for (const ticker of vencidas) tentativasYahoo.set(ticker, momento.toISOString());
     const pregoes: Pregao[] = [];
     let completa = true;
+    let chamou = false;
     for (const lote of dividirEmLotes(vencidas)) {
       if (!podeChamarYahoo(momento)) {
         completa = false;
         break;
       }
       contarUso(uso, 'yahoo', momento);
+      chamou = true;
       let cotacoes: CotacaoYahoo[];
       try {
         cotacoes = await buscarLoteYahoo(buscar, lote, momento);
@@ -175,31 +182,47 @@ export function criarServicoCotacoes({
     if (completa) {
       semFalhar('registrar o sucesso do Yahoo', () => estado.registrarSucesso('yahoo', momento));
     }
+    return chamou;
   }
 
   /** Uma rodada: espera a pausa desde a rodada anterior e busca o que estiver vencido. */
   async function rodadaYahoo(tickers: readonly Ticker[]): Promise<void> {
-    if (!tickers.some((ticker) => vencidaNoYahoo(ticker, agora()))) return;
+    const inicio = agora();
+    if (!tickers.some((ticker) => vencidaNoYahoo(ticker, inicio))) return;
+    // Yahoo em espera: nada de pausa, a reserva da brapi entra logo.
+    if (!podeChamarYahoo(inicio)) return;
     if (fimDaUltimaRodada !== undefined) {
-      const decorrido = agora().getTime() - Date.parse(fimDaUltimaRodada);
-      if (decorrido >= 0 && decorrido < PAUSA_ENTRE_RODADAS_YAHOO_MS) {
-        await esperar(PAUSA_ENTRE_RODADAS_YAHOO_MS - decorrido);
-      }
+      const decorrido = inicio.getTime() - Date.parse(fimDaUltimaRodada);
+      // Relógio atrasado (decorrido negativo): espera a pausa inteira, por segurança.
+      const espera =
+        decorrido < 0 ? PAUSA_ENTRE_RODADAS_YAHOO_MS : PAUSA_ENTRE_RODADAS_YAHOO_MS - decorrido;
+      if (espera > 0) await esperar(espera);
     }
     const momento = agora();
     const vencidas = tickers.filter((ticker) => vencidaNoYahoo(ticker, momento));
     if (vencidas.length === 0 || !podeChamarYahoo(momento)) return;
+    let chamou = false;
     try {
-      await buscarNoYahoo(vencidas, momento);
+      chamou = await buscarNoYahoo(vencidas, momento);
     } finally {
-      fimDaUltimaRodada = agora().toISOString();
+      if (chamou) fimDaUltimaRodada = agora().toISOString();
     }
   }
 
+  /** Entra na próxima rodada (ou cria uma), que buscará as ações de todos os pedidos. */
   function atualizarPeloYahoo(tickers: readonly Ticker[]): Promise<void> {
-    const rodada = filaYahoo.then(() => rodadaYahoo(tickers));
-    filaYahoo = rodada.catch(() => {});
-    return rodada;
+    for (const ticker of tickers) acoesPendentes.add(ticker);
+    if (!rodadaPendente) {
+      const rodada = filaYahoo.then(() => {
+        rodadaPendente = null;
+        const acoes = [...acoesPendentes];
+        acoesPendentes.clear();
+        return rodadaYahoo(acoes);
+      });
+      rodadaPendente = rodada;
+      filaYahoo = rodada.catch(() => {});
+    }
+    return rodadaPendente;
   }
 
   /** Usa o preço da listagem da brapi para as ações sem cotação recente do Yahoo. */

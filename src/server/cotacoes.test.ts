@@ -410,7 +410,7 @@ describe('robustez das cotações (revisão)', () => {
     expect(cotacoes.listar(['BBAS3', 'PETR4']).semCotacaoNoYahoo).toEqual([]);
   });
 
-  it('ação marcada logo após uma rodada espera a pausa de 10 s e é buscada no Yahoo', async () => {
+  it('ação marcada logo após uma rodada espera a pausa de 5 s e é buscada no Yahoo', async () => {
     const { cotacoes, doYahoo, esperas, daBrapi } = montar({
       [URL_YAHOO]: [spark(itemSpark('BBAS3')), spark(itemSpark('PETR4'))],
       [URL_LISTA_BRAPI]: listaBrapi(),
@@ -420,7 +420,7 @@ describe('robustez das cotações (revisão)', () => {
     avancar(3000);
     const painel = await atualizarEListar(cotacoes, ['BBAS3', 'PETR4']);
 
-    expect(esperas).toEqual([7000]);
+    expect(esperas).toEqual([2000]);
     expect(doYahoo().map((r) => new URL(r.url).searchParams.get('symbols'))).toEqual([
       'BBAS3.SA',
       'PETR4.SA',
@@ -446,8 +446,12 @@ describe('robustez das cotações (revisão)', () => {
       cotacoes.atualizar(['VALE3']),
     ]);
 
+    // Os três pedidos entram na mesma rodada: uma só chamada com as três ações.
     expect(pico).toBe(1);
-    expect(doYahoo()).toHaveLength(3);
+    expect(doYahoo()).toHaveLength(1);
+    expect(new URL(doYahoo()[0].url).searchParams.get('symbols')).toBe(
+      'BBAS3.SA,PETR4.SA,VALE3.SA',
+    );
   });
 
   it('bloqueio durante a rodada interrompe os lotes seguintes', async () => {
@@ -456,8 +460,9 @@ describe('robustez das cotações (revisão)', () => {
       [URL_YAHOO]: spark(...muitas.slice(0, 20).map((t) => itemSpark(t))),
       [URL_LISTA_BRAPI]: listaBrapi(),
     });
-    // Liberado antes da rodada e do 1º lote; bloqueado (por outro pedido) antes do 2º.
+    // Liberado no início e após a pausa da rodada e no 1º lote; bloqueado antes do 2º.
     vi.spyOn(estado, 'podeChamar')
+      .mockReturnValueOnce(true)
       .mockReturnValueOnce(true)
       .mockReturnValueOnce(true)
       .mockReturnValue(false);
@@ -626,5 +631,94 @@ describe('segunda revisão da etapa 4b', () => {
       precoCentavos: 1738,
     });
     expect(doYahoo()).toHaveLength(1);
+  });
+});
+
+describe('terceira revisão da etapa 4b', () => {
+  it('pedidos que chegam durante uma rodada lenta são atendidos juntos na próxima', async () => {
+    const lento = (itens: string[]) => async () => {
+      await new Promise((resolver) => setTimeout(resolver, 10));
+      return spark(...itens.map((t) => itemSpark(t)));
+    };
+    const { cotacoes, doYahoo } = montar({
+      [URL_YAHOO]: [lento(['BBAS3']), lento(['PETR4', 'VALE3', 'ITUB4'])],
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+
+    const primeira = cotacoes.atualizar(['BBAS3']);
+    await new Promise((resolver) => setTimeout(resolver, 2)); // a 1ª rodada já começou
+    await Promise.all([
+      primeira,
+      cotacoes.atualizar(['BBAS3', 'PETR4']),
+      cotacoes.atualizar(['BBAS3', 'PETR4', 'VALE3']),
+      cotacoes.atualizar(['ITUB4']),
+    ]);
+
+    expect(doYahoo().map((r) => new URL(r.url).searchParams.get('symbols'))).toEqual([
+      'BBAS3.SA',
+      'PETR4.SA,VALE3.SA,ITUB4.SA',
+    ]);
+  });
+
+  it('Yahoo em espera: a reserva entra sem esperar a pausa', async () => {
+    const { cotacoes, esperas } = montar({
+      [URL_YAHOO]: json({}, { status: 402 }),
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+    await cotacoes.atualizar(['BBAS3']);
+
+    avancar(1000);
+    const painel = await atualizarEListar(cotacoes, ['BBAS3', 'PETR4']);
+
+    expect(esperas).toEqual([]);
+    expect(painel.cotacoes.map((c) => c.fonte)).toEqual(['brapi', 'brapi']);
+  });
+
+  it('relógio atrasado: espera a pausa inteira', async () => {
+    const { cotacoes, esperas } = montar({
+      [URL_YAHOO]: [spark(itemSpark('BBAS3')), spark(itemSpark('PETR4'))],
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+    await cotacoes.atualizar(['BBAS3']);
+
+    avancar(-60 * 1000);
+    await cotacoes.atualizar(['BBAS3', 'PETR4']);
+
+    expect(esperas).toEqual([5000]);
+  });
+
+  it('rodada que não chegou a chamar o Yahoo não impõe pausa à seguinte', async () => {
+    const { cotacoes, estado, esperas } = montar({
+      [URL_YAHOO]: spark(itemSpark('BBAS3'), itemSpark('PETR4')),
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+    const original = estado.podeChamar.bind(estado);
+    const espiao = vi.spyOn(estado, 'podeChamar');
+    // 1ª rodada: liberada no início e após a pausa, mas bloqueada antes do 1º lote.
+    espiao.mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValueOnce(false);
+    await cotacoes.atualizar(['BBAS3']);
+    espiao.mockImplementation(original);
+
+    avancar(1000);
+    await cotacoes.atualizar(['BBAS3', 'PETR4']);
+
+    expect(esperas).toEqual([]);
+  });
+
+  it('rodada que falha por erro inesperado não trava as seguintes', async () => {
+    const { cotacoes, doYahoo } = montar({
+      [URL_YAHOO]: spark(itemSpark('BBAS3')),
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+    // Sem a tabela, ler as cotações salvas falha e a 1ª rodada termina com erro.
+    banco.exec('ALTER TABLE cotacoes RENAME TO cotacoes_fora');
+    await expect(cotacoes.atualizar(['BBAS3'])).resolves.toBeUndefined();
+    banco.exec('ALTER TABLE cotacoes_fora RENAME TO cotacoes');
+
+    avancar(1000);
+    await cotacoes.atualizar(['BBAS3']);
+
+    expect(doYahoo()).toHaveLength(1);
+    expect(cotacoes.listar(['BBAS3']).cotacoes[0].fonte).toBe('yahoo');
   });
 });

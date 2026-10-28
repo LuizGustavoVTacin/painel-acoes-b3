@@ -82,8 +82,10 @@ Login, sales, historical charts, real-time quotes, hosting.
   until 30 minutes after the close (closing auction), every 15 minutes on a
   weekday during session hours while Yahoo has not confirmed that day's
   session, and at most once an hour otherwise; plus one forced refresh after
-  the auction and one at the projected opening. At least 10 s between Yahoo
-  rounds; `/api/cotacoes` waits at most 8 s and then answers with saved data.
+  the auction and one at the projected opening. Yahoo rounds run one at a
+  time, a waiting round merges the stocks of every request, and there are at
+  least 5 s between rounds that called Yahoo; `/api/cotacoes` waits at most
+  8 s and then answers with saved data.
 - Last known price per stock is kept in `cotacoes`; a stock Yahoo did not
   refresh uses the brapi list price, and with no source the saved price is
   shown flagged as outdated.

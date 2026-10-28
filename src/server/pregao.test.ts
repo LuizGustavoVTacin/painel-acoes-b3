@@ -38,13 +38,17 @@ describe('situacaoDoPregao', () => {
   });
 
   it.each([
-    ['dia útil às 12h', '2026-10-27T15:00:00Z', 'aberto'],
-    ['dia útil às 17h10', '2026-10-27T20:10:00Z', 'leilao'],
+    ['dia útil às 12h (pode ser feriado)', '2026-10-27T15:00:00Z', 'desconhecido'],
+    ['dia útil às 17h10', '2026-10-27T20:10:00Z', 'desconhecido'],
+    ['dia útil às 9h', '2026-10-27T12:00:00Z', 'fechado'],
     ['dia útil à noite', '2026-10-27T23:00:00Z', 'fechado'],
     ['sábado às 12h', '2026-10-31T15:00:00Z', 'fechado'],
-  ])('sem pregão do Yahoo, usa o horário habitual da B3: %s', (_caso, instante, esperado) => {
-    expect(situacaoDoPregao(undefined, em(instante))).toBe(esperado);
-  });
+  ])(
+    'sem pregão do Yahoo, o horário habitual da B3 fica sem confirmação: %s',
+    (_caso, instante, esperado) => {
+      expect(situacaoDoPregao(undefined, em(instante))).toBe(esperado);
+    },
+  );
 });
 
 describe('intervaloDeAtualizacao', () => {
