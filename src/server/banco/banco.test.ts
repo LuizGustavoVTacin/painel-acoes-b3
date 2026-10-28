@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -84,17 +84,39 @@ describe('migrações', () => {
     aplicarMigracoes(banco, ['CREATE TABLE t (x INTEGER) STRICT', 'ALTER TABLE t ADD y INTEGER']);
     banco.close();
 
-    const backup = new DatabaseSync(`${arquivo}.bak-v1`);
+    const backups = readdirSync(pasta).filter((nome) => nome.startsWith('dados.db.bak-v1-'));
+    expect(backups).toHaveLength(1);
+    const backup = new DatabaseSync(path.join(pasta, backups[0]));
     expect(backup.prepare('SELECT * FROM t').all()).toEqual([{ x: 42 }]);
     expect(backup.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 });
     backup.close();
   });
 
-  it('não faz backup de um banco novo (versão 0)', () => {
-    const arquivo = path.join(pasta, 'novo.db');
-    abrirBanco(arquivo).close();
+  it('cria um backup novo a cada tentativa, sem reaproveitar um antigo', async () => {
+    const arquivo = path.join(pasta, 'dados.db');
+    const banco = new DatabaseSync(arquivo);
+    aplicarMigracoes(banco, ['CREATE TABLE t (x INTEGER) STRICT']);
+    const migracaoQueFalha = ['CREATE TABLE t (x INTEGER) STRICT', 'SINTAXE INVÁLIDA'];
 
-    expect(existsSync(`${arquivo}.bak-v0`)).toBe(false);
+    expect(() => aplicarMigracoes(banco, migracaoQueFalha)).toThrow();
+    banco.exec('INSERT INTO t VALUES (7)'); // dado novo depois da primeira tentativa
+    await new Promise((resolver) => setTimeout(resolver, 5));
+    expect(() => aplicarMigracoes(banco, migracaoQueFalha)).toThrow();
+    banco.close();
+
+    const backups = readdirSync(pasta)
+      .filter((nome) => nome.includes('.bak-v1-'))
+      .sort();
+    expect(backups).toHaveLength(2);
+    const maisRecente = new DatabaseSync(path.join(pasta, backups[1]));
+    expect(maisRecente.prepare('SELECT * FROM t').all()).toEqual([{ x: 7 }]);
+    maisRecente.close();
+  });
+
+  it('não faz backup de um banco novo (versão 0)', () => {
+    abrirBanco(path.join(pasta, 'novo.db')).close();
+
+    expect(readdirSync(pasta).filter((nome) => nome.includes('.bak-'))).toEqual([]);
   });
 
   it('deixa o banco intacto se uma migração falhar', () => {

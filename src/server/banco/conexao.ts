@@ -25,6 +25,10 @@ export function abrirBanco(arquivo: string): Banco {
  */
 export function fecharBanco(banco: Banco): void {
   if (!banco.isOpen) return;
-  banco.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-  banco.close();
+  try {
+    banco.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  } finally {
+    // Mesmo que o checkpoint falhe, o banco precisa ser fechado (os dados já estão no WAL).
+    banco.close();
+  }
 }

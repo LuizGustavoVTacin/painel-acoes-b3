@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarApp } from './app.js';
 import { abrirBanco, type Banco } from './banco/conexao.js';
 
@@ -21,6 +21,10 @@ let app: ReturnType<typeof criarApp>;
 beforeEach(() => {
   banco = abrirBanco(':memory:');
   app = criarApp({ banco, agora: () => AGORA });
+});
+
+afterEach(() => {
+  banco.close();
 });
 
 const criarCompra = async (dados: Record<string, unknown> = {}) =>
@@ -294,6 +298,8 @@ describe('dados aceitos pela validação são aceitos pelo banco', () => {
     ['caractere NUL no meio', 'ab\u0000c'],
     ['quebra de linha', 'BTG\nXP'],
     ['surrogate isolado', 'BTG \ud800'],
+    ['espaço de largura zero', 'BTG​'],
+    ['inversão de direção do texto', '‮BTG'],
   ])('recusa plataforma com %s (400, não 500)', async (_caso, plataforma) => {
     const resposta = await criarCompra({ plataforma });
 

@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import { emTransacao } from './emTransacao.js';
 
@@ -10,6 +9,8 @@ const AGORA_ISO = `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
 /**
  * Migrações em ordem. A posição no array é a versão (PRAGMA user_version).
  * Nunca altere uma migração já publicada: acrescente uma nova no fim.
+ * Todas rodam dentro de uma transação, onde PRAGMA foreign_keys não tem efeito:
+ * uma migração que reconstrua tabelas com chaves estrangeiras precisa tratar disso.
  */
 const MIGRACOES: readonly string[] = [
   `
@@ -62,14 +63,15 @@ function garantirVersaoSuportada(versao: number, versaoDoApp: number): void {
   }
 }
 
-/** Copia o banco para "<arquivo>.bak-v<versão>" antes de migrar dados que já existem. */
+/**
+ * Copia o banco para "<arquivo>.bak-v<versão>-<data e hora>" antes de migrar dados que já
+ * existem. O carimbo de tempo garante que cada tentativa guarda os dados daquele momento.
+ */
 function fazerBackup(banco: DatabaseSync, versao: number): void {
   const arquivo = banco.location();
   if (!arquivo) return; // banco em memória
-  const destino = `${arquivo}.bak-v${versao}`;
-  // Uma cópia desta versão já existe (ex.: migração anterior que falhou): mantém a original.
-  if (existsSync(destino)) return;
-  banco.prepare('VACUUM INTO ?').run(destino);
+  const carimbo = new Date().toISOString().replace(/[:.]/g, '-');
+  banco.prepare('VACUUM INTO ?').run(`${arquivo}.bak-v${versao}-${carimbo}`);
 }
 
 /**

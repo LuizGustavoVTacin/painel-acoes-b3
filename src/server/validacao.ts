@@ -64,8 +64,9 @@ export function validarDadosTransacao(corpo: unknown, hoje: DataISO): DadosTrans
   const tamanhoPlataforma = [...plataforma].length;
   if (tamanhoPlataforma === 0 || tamanhoPlataforma > TAMANHO_MAXIMO_PLATAFORMA) {
     campos.plataforma = `Informe a plataforma (até ${TAMANHO_MAXIMO_PLATAFORMA} caracteres)`;
-  } else if (!plataforma.isWellFormed() || /\p{Cc}/u.test(plataforma)) {
-    // Caracteres de controle (ex.: NUL) fazem o SQLite contar o tamanho de outro jeito.
+  } else if (!plataforma.isWellFormed() || /[\p{Cc}\p{Cf}]/u.test(plataforma)) {
+    // Caracteres de controle (ex.: NUL) fazem o SQLite contar o tamanho de outro jeito;
+    // caracteres invisíveis de formatação (ex.: U+202E) bagunçariam a exibição.
     campos.plataforma = 'A plataforma contém caracteres inválidos';
   }
 
