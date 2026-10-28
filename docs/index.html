@@ -151,7 +151,7 @@
               <strong>Catálogo, logos e alertas (4a) · Cotações do Yahoo (4b)</strong>
               <span>Fontes gratuitas, reserva automática e monitoramento das APIs.</span>
             </li>
-            <li>
+            <li class="feita">
               <strong>Grade na tela e rodapé</strong>
               <span>Quadrados, atualização a cada 5 min, fonte em uso e avisos.</span>
             </li>
@@ -180,8 +180,9 @@
           <div class="aviso aviso-dica">
             <span aria-hidden="true">ℹ</span>
             <p>
-              Hoje o servidor e toda a lógica estão prontos e testados; a interface visual (grade,
-              menu, formulários) chega a partir da etapa 5. Os capítulos marcam o que já existe com
+              O servidor, a lógica e a grade de cotações com o rodapé já estão prontos e testados;
+              destaque, menu e formulários chegam nas próximas etapas. Os capítulos marcam o que já
+              existe com
               <span class="etiqueta etiqueta-feito">pronto</span> e o que vem depois com
               <span class="etiqueta etiqueta-pendente">próximas etapas</span>.
             </p>
@@ -398,13 +399,18 @@ docs/            Esta documentação</code></pre>
         <section id="tela">
           <span class="capitulo">Capítulo 04 · Funcionalidades</span>
           <h2 class="titulo">
-            A tela do dashboard <span class="etiqueta etiqueta-pendente">próximas etapas</span>
+            A tela do dashboard <span class="etiqueta etiqueta-feito">grade e rodapé prontos</span>
           </h2>
-          <p class="resumo">Como a tela vai se comportar, conforme as decisões já aprovadas.</p>
+          <p class="resumo">
+            Grade, atualização automática e rodapé já funcionam; destaque, menu e setas chegam nas
+            próximas etapas.
+          </p>
 
           <h3>Os quadrados</h3>
           <p>
-            Cada ação escolhida vira um quadrado do mesmo tamanho, com logo, código e preço atual:
+            Cada ação escolhida vira um quadrado do mesmo tamanho, com logo, código e preço atual
+            (as setas chegam na etapa 9; logo que falha vira as iniciais; preço antigo ganha o selo
+            “desatualizado”):
           </p>
           <div class="quadrado-exemplo" aria-label="Exemplos de quadrados">
             <div class="quadrado">
@@ -436,7 +442,9 @@ docs/            Esta documentação</code></pre>
             as demais ações ficam acessíveis rolando a página. Os quadrados continuam quadrados.
           </p>
 
-          <h3>Destaque dos vizinhos</h3>
+          <h3>
+            Destaque dos vizinhos <span class="etiqueta etiqueta-pendente">próximas etapas</span>
+          </h3>
           <p>
             O quadrado ativo ganha destaque forte e os 4 vizinhos (acima, abaixo, esquerda e
             direita) um destaque suave. O número de colunas é lido do layout real, e o cálculo dos
@@ -467,17 +475,64 @@ docs/            Esta documentação</code></pre>
             </table>
           </div>
 
-          <h3>Menu e rodapé</h3>
+          <h3>Atualização automática <span class="etiqueta etiqueta-feito">pronto</span></h3>
+          <div class="tabela">
+            <table>
+              <thead>
+                <tr>
+                  <th>Quando</th>
+                  <th>O que a tela faz</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Ao abrir</td>
+                  <td>Busca as cotações de todas as ações escolhidas.</td>
+                </tr>
+                <tr>
+                  <td>A cada 5 minutos</td>
+                  <td>Busca de novo. O servidor decide se precisa chamar o Yahoo ou a brapi.</td>
+                </tr>
+                <tr>
+                  <td>Ação ainda sem preço</td>
+                  <td>Pergunta de novo em 10 s, no máximo 3 vezes por ação.</td>
+                </tr>
+                <tr>
+                  <td>Servidor fora do ar</td>
+                  <td>Mantém os últimos preços, avisa e tenta de novo em 1 minuto.</td>
+                </tr>
+                <tr>
+                  <td>Aba escondida</td>
+                  <td>Não busca; ao voltar, busca na hora se a vez dela já passou.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Cabeçalho e rodapé <span class="etiqueta etiqueta-feito">pronto</span></h3>
           <ul>
             <li>
-              Menu no canto superior direito: escolher ações (caixas de seleção, máximo de 50 — as
-              demais ficam desabilitadas ao atingir o limite) e registrar compras.
+              Cabeçalho: “Mercado aberto”, “Mercado fechado · último fechamento” ou “Pregão de hoje
+              ainda não confirmado”, e “Atualizado em dd/mm/aaaa hh:mm” (horário de Brasília).
             </li>
             <li>
-              Rodapé: horário da última atualização, qual API está em uso e avisos quando uma API
-              estiver indisponível, pedir pagamento ou mudar de formato.
+              Rodapé: qual API está em uso (“Cotações: Yahoo Finance”, ou “brapi (reserva)”) e um
+              aviso para cada API indisponível, que passou a exigir pagamento ou que mudou de
+              formato — com o horário da próxima verificação.
+            </li>
+            <li>Ações que o Yahoo não conhece aparecem em “Sem cotação no Yahoo”.</li>
+            <li>
+              Uma resposta estranha do servidor nunca deixa a página em branco: um item inválido é
+              ignorado sozinho, e qualquer erro inesperado vira uma mensagem.
             </li>
           </ul>
+
+          <h3>Menu <span class="etiqueta etiqueta-pendente">próximas etapas</span></h3>
+          <p>
+            No canto superior direito: escolher ações (caixas de seleção, máximo de 50 — as demais
+            ficam desabilitadas ao atingir o limite) e registrar compras. Até lá, sem ações
+            escolhidas, a tela mostra “Nenhuma ação selecionada”.
+          </p>
 
           <nav class="navegacao" aria-label="Navegação entre capítulos">
             <a href="#arquitetura"><small>Anterior</small>← Arquitetura</a>
@@ -1242,7 +1297,7 @@ docs/            Esta documentação</code></pre>
           <div class="cartoes">
             <div class="cartao">
               <span class="icone" aria-hidden="true">✓</span>
-              <h4>545 testes</h4>
+              <h4>616 testes</h4>
               <p>Regras, banco, rotas, APIs externas e tela.</p>
             </div>
             <div class="cartao">
@@ -1290,13 +1345,6 @@ docs/            Esta documentação</code></pre>
               </thead>
               <tbody>
                 <tr>
-                  <td>5</td>
-                  <td>
-                    Grade de quadrados, atualização a cada 5 min e rodapé com fonte, horário e
-                    avisos.
-                  </td>
-                </tr>
-                <tr>
                   <td>6</td>
                   <td>Destaque do quadrado ativo e dos 4 vizinhos (mouse, toque e teclado).</td>
                 </tr>
@@ -1333,10 +1381,6 @@ docs/            Esta documentação</code></pre>
             <li>
               Se a B3 mudar o horário do pregão, os primeiros preços do primeiro dia podem atrasar
               até 15 minutos.
-            </li>
-            <li>
-              O rodapé (etapa 5) deve ler o aviso de ações sem cotação em
-              <code>/api/cotacoes</code>.
             </li>
           </ul>
 
@@ -1417,7 +1461,7 @@ docs/            Esta documentação</code></pre>
         </section>
 
         <footer class="rodape">
-          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 4b.</p>
+          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 5.</p>
         </footer>
       </main>
     </div>
