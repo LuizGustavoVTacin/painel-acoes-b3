@@ -11,3 +11,6 @@
 
 # Dependências
 node_modules/
+
+# Build
+dist/
