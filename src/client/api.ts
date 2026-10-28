@@ -6,6 +6,7 @@ import type {
   RespostaCotacoes,
   SituacaoFonte,
 } from '../shared/painel';
+import { ehInstanteISO } from '../shared/datas';
 import { normalizarTicker, type Ticker } from '../shared/ticker';
 
 /** Falha ao obter dados do servidor local, com uma mensagem pronta para a tela. */
@@ -26,8 +27,9 @@ const ehObjeto = (valor: unknown): valor is Objeto =>
   typeof valor === 'object' && valor !== null && !Array.isArray(valor);
 const ehTicker = (valor: unknown): valor is Ticker =>
   typeof valor === 'string' && normalizarTicker(valor) === valor;
+// O mesmo critério de formatarHorario: um horário que a tela não sabe mostrar é recusado aqui.
 const ehInstante = (valor: unknown): valor is string =>
-  typeof valor === 'string' && !Number.isNaN(Date.parse(valor));
+  typeof valor === 'string' && ehInstanteISO(valor);
 const ehInstanteOuNulo = (valor: unknown): valor is string | null =>
   valor === null || ehInstante(valor);
 const ehPreco = (valor: unknown): valor is number | null =>
@@ -37,7 +39,13 @@ function formatoInvalido(): ErroApi {
   return new ErroApi('O servidor enviou uma resposta em formato inesperado');
 }
 
-function lerCotacao(valor: unknown): Cotacao {
+/** Descarta um item inválido sem perder os demais; o aviso fica no console para diagnóstico. */
+function descartar(tipo: string, valor: unknown): null {
+  console.warn(`Item de ${tipo} ignorado: formato inesperado`, valor);
+  return null;
+}
+
+function lerCotacao(valor: unknown): Cotacao | null {
   if (
     !ehObjeto(valor) ||
     !ehTicker(valor.ticker) ||
@@ -47,7 +55,7 @@ function lerCotacao(valor: unknown): Cotacao {
     !ehInstanteOuNulo(valor.atualizadoEm) ||
     typeof valor.desatualizada !== 'boolean'
   ) {
-    throw formatoInvalido();
+    return descartar('cotação', valor);
   }
   return {
     ticker: valor.ticker,
@@ -59,7 +67,7 @@ function lerCotacao(valor: unknown): Cotacao {
   };
 }
 
-function lerFonte(valor: unknown): EstadoFonte {
+function lerFonte(valor: unknown): EstadoFonte | null {
   if (
     !ehObjeto(valor) ||
     !PROVEDORES.has(valor.provedor as Provedor) ||
@@ -70,7 +78,7 @@ function lerFonte(valor: unknown): EstadoFonte {
     !ehInstanteOuNulo(valor.ultimoSucesso) ||
     !ehInstanteOuNulo(valor.proximaTentativa)
   ) {
-    throw formatoInvalido();
+    return descartar('fonte', valor);
   }
   return {
     provedor: valor.provedor as Provedor,
@@ -83,26 +91,31 @@ function lerFonte(valor: unknown): EstadoFonte {
   };
 }
 
-/** Confere o corpo de GET /api/cotacoes; qualquer desvio vira ErroApi, nunca uma tela quebrada. */
+const presente = <T>(item: T | null): item is T => item !== null;
+
+/**
+ * Confere o corpo de GET /api/cotacoes. Estrutura errada vira ErroApi; um item inválido é
+ * descartado sozinho, para uma cotação estranha não esconder as outras 49.
+ */
 export function lerRespostaCotacoes(corpo: unknown): RespostaCotacoes {
   if (
     !ehObjeto(corpo) ||
     !Array.isArray(corpo.cotacoes) ||
     !(corpo.mercadoAberto === null || typeof corpo.mercadoAberto === 'boolean') ||
     !Array.isArray(corpo.fontesEmUso) ||
-    !corpo.fontesEmUso.every((fonte) => FONTES.has(fonte as FonteCotacao)) ||
     !Array.isArray(corpo.semCotacaoNoYahoo) ||
-    !corpo.semCotacaoNoYahoo.every(ehTicker) ||
     !Array.isArray(corpo.fontes)
   ) {
     throw formatoInvalido();
   }
   return {
-    cotacoes: corpo.cotacoes.map(lerCotacao),
+    cotacoes: corpo.cotacoes.map(lerCotacao).filter(presente),
     mercadoAberto: corpo.mercadoAberto,
-    fontesEmUso: corpo.fontesEmUso as FonteCotacao[],
-    semCotacaoNoYahoo: corpo.semCotacaoNoYahoo as Ticker[],
-    fontes: corpo.fontes.map(lerFonte),
+    fontesEmUso: corpo.fontesEmUso.filter((fonte): fonte is FonteCotacao =>
+      FONTES.has(fonte as FonteCotacao),
+    ),
+    semCotacaoNoYahoo: corpo.semCotacaoNoYahoo.filter(ehTicker),
+    fontes: corpo.fontes.map(lerFonte).filter(presente),
   };
 }
 

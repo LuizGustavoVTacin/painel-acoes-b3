@@ -13,6 +13,8 @@ export interface EstadoCotacoes {
   /** Mensagem da última busca, se ela falhou. */
   erro: string | null;
   carregando: boolean;
+  /** Quantas buscas deram certo; muda a cada busca, para a tela tentar de novo o que falhou. */
+  recebimentos: number;
 }
 
 function mensagemDeErro(erro: unknown, expirou: boolean): string {
@@ -30,11 +32,14 @@ export function useCotacoes(tempoLimiteMs = TEMPO_LIMITE_COTACOES_MS): EstadoCot
     dados: null,
     erro: null,
     carregando: true,
+    recebimentos: 0,
   });
 
   useEffect(() => {
     let ativo = true;
     let buscando = false;
+    /** O horário da busca chegou com a aba escondida: fica para quando ela voltar. */
+    let adiada = false;
     let ultimaBusca = 0;
     let proxima: ReturnType<typeof setTimeout> | undefined;
     let controle: AbortController | null = null;
@@ -58,7 +63,12 @@ export function useCotacoes(tempoLimiteMs = TEMPO_LIMITE_COTACOES_MS): EstadoCot
         const plano = planejarProximaBusca(dados.cotacoes, tentativas);
         tentativas = plano.tentativas;
         esperaMs = plano.esperaMs;
-        setEstado({ dados, erro: null, carregando: false });
+        setEstado((anterior) => ({
+          dados,
+          erro: null,
+          carregando: false,
+          recebimentos: anterior.recebimentos + 1,
+        }));
       } catch (erro) {
         if (!ativo) return;
         setEstado((anterior) => ({
@@ -71,16 +81,27 @@ export function useCotacoes(tempoLimiteMs = TEMPO_LIMITE_COTACOES_MS): EstadoCot
         buscando = false;
       }
       ultimaBusca = Date.now();
-      proxima = setTimeout(() => void buscar(), esperaMs);
+      proxima = setTimeout(buscarSeVisivel, esperaMs);
     }
 
-    // Abas em segundo plano atrasam temporizadores; ao voltar, atualiza se já passou da hora.
+    // Aba escondida não busca: ninguém está olhando, e várias abas não multiplicam as buscas.
+    function buscarSeVisivel(): void {
+      if (document.visibilityState === 'hidden') {
+        adiada = true;
+        return;
+      }
+      void buscar();
+    }
+
+    // Ao voltar para a aba, busca se a vez dela passou ou se a última busca já é antiga
+    // (abas em segundo plano também atrasam os temporizadores).
     function aoMudarVisibilidade(): void {
       if (
         document.visibilityState === 'visible' &&
         !buscando &&
-        Date.now() - ultimaBusca >= INTERVALO_ATUALIZACAO_MS
+        (adiada || Date.now() - ultimaBusca >= INTERVALO_ATUALIZACAO_MS)
       ) {
+        adiada = false;
         void buscar();
       }
     }

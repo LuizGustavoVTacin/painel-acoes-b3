@@ -82,15 +82,36 @@ describe('avisosDoRodape', () => {
       {
         nivel: 'erro',
         texto:
-          'Yahoo Finance passou a exigir pagamento ou chave e não está sendo usada. Nova verificação em até 24 h.',
+          'Yahoo Finance: passou a exigir pagamento ou chave e o app parou de chamá-lo. Usando os últimos dados salvos. Nova verificação em até 24 h.',
       },
-      { nivel: 'atencao', texto: 'brapi indisponível no momento. Usando os últimos dados salvos.' },
+      {
+        nivel: 'atencao',
+        texto: 'brapi: indisponível no momento. Usando os últimos dados salvos.',
+      },
       {
         nivel: 'erro',
         texto:
-          'Logos da brapi mudou o formato dos dados e não está sendo usada. Nova verificação em até 24 h.',
+          'Servidor de logos da brapi: mudou o formato dos dados e o app parou de chamá-lo. Os logos já salvos continuam aparecendo. Nova verificação em até 24 h.',
       },
     ]);
+  });
+
+  it('Yahoo fora com a brapi suprindo os preços: diz que a reserva está em uso', () => {
+    const [aviso] = avisosDoRodape(
+      resposta({ fontesEmUso: ['brapi'], fontes: [fonte('yahoo', 'instavel'), fonte('brapi')] }),
+    );
+    expect(aviso.texto).toBe(
+      'Yahoo Finance: indisponível no momento. Usando a brapi como reserva.',
+    );
+  });
+
+  it('mostra o horário da próxima verificação (Brasília) quando o servidor informa', () => {
+    const bloqueada = {
+      ...fonte('yahoo', 'bloqueada'),
+      proximaTentativa: '2026-10-28T20:44:12.000Z',
+    };
+    const [aviso] = avisosDoRodape(resposta({ fontes: [bloqueada] }));
+    expect(aviso.texto.endsWith('Nova verificação em 28/10/2026 17:44.')).toBe(true);
   });
 
   it('API funcionando com aviso (ex.: menção a cobrança) aparece como atenção', () => {

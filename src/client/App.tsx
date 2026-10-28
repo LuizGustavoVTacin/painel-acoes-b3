@@ -10,7 +10,7 @@ interface PropsApp {
 }
 
 export function App({ tempoLimiteMs }: PropsApp) {
-  const { dados, erro, carregando } = useCotacoes(tempoLimiteMs);
+  const { dados, erro, carregando, recebimentos } = useCotacoes(tempoLimiteMs);
   const atualizadoEm = dados && ultimaAtualizacao(dados.cotacoes);
 
   let conteudo = null;
@@ -24,7 +24,7 @@ export function App({ tempoLimiteMs }: PropsApp) {
     conteudo = (
       <ul className="grade" aria-label="Ações acompanhadas">
         {dados.cotacoes.map((cotacao) => (
-          <QuadradoAcao key={cotacao.ticker} cotacao={cotacao} />
+          <QuadradoAcao key={cotacao.ticker} cotacao={cotacao} rodada={recebimentos} />
         ))}
       </ul>
     );
@@ -45,7 +45,7 @@ export function App({ tempoLimiteMs }: PropsApp) {
       </header>
       {erro && (
         <p role="alert" className="erro">
-          {erro}.{dados && ' Mostrando os últimos dados recebidos.'}
+          {erro}.{dados ? ' Mostrando os últimos dados recebidos.' : ' Nova tentativa em 1 minuto.'}
         </p>
       )}
       <main className="principal">{conteudo}</main>

@@ -1,8 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RespostaCotacoes } from '../shared/painel';
 import { ESPERA_ACAO_SEM_DADOS_MS, ESPERA_APOS_FALHA_MS, INTERVALO_ATUALIZACAO_MS } from './agenda';
 import { App } from './App';
+import { LimiteDeErro } from './LimiteDeErro';
 import { cotacao, fonte, resposta } from './testes/respostas';
 
 type Resposta = RespostaCotacoes | Response | Error;
@@ -114,7 +116,7 @@ describe('App', () => {
     const rodape = screen.getByRole('contentinfo');
     expect(rodape).toHaveTextContent('Cotações: brapi (reserva)');
     const avisos = within(rodape).getAllByRole('listitem');
-    expect(avisos[0]).toHaveTextContent('Yahoo Finance passou a exigir pagamento ou chave');
+    expect(avisos[0]).toHaveTextContent('Yahoo Finance: passou a exigir pagamento ou chave');
     expect(avisos[0]).toHaveClass('aviso-erro');
     expect(avisos[1]).toHaveTextContent('Sem cotação no Yahoo: ELET3');
   });
@@ -125,7 +127,7 @@ describe('App', () => {
     await avancar();
 
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Não foi possível falar com o servidor do dashboard.',
+      'Não foi possível falar com o servidor do dashboard. Nova tentativa em 1 minuto.',
     );
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
@@ -233,5 +235,144 @@ describe('App', () => {
     await avancar(INTERVALO_ATUALIZACAO_MS * 3);
 
     expect(fetchFalso).toHaveBeenCalledTimes(1);
+  });
+
+  it('logo que falhou é tentado de novo na atualização seguinte', async () => {
+    simularServidor(resposta());
+    render(<App />);
+    await avancar();
+    fireEvent.error(quadrados()[0].querySelector('img')!);
+    expect(quadrados()[0].querySelector('img')).toBeNull();
+
+    await avancar(INTERVALO_ATUALIZACAO_MS);
+
+    expect(quadrados()[0].querySelector('img')).toHaveAttribute('src', '/api/logos/BBAS3');
+  });
+
+  it('aba escondida não busca; a busca adiada acontece ao voltar', async () => {
+    const fetchFalso = simularServidor(resposta());
+    let visibilidade: DocumentVisibilityState = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibilidade);
+    render(<App />);
+    await avancar();
+
+    visibilidade = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    await avancar(INTERVALO_ATUALIZACAO_MS * 3);
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+
+    visibilidade = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    await avancar();
+    expect(fetchFalso).toHaveBeenCalledTimes(2);
+  });
+
+  it('busca rápida adiada pela aba escondida acontece logo ao voltar', async () => {
+    const fetchFalso = simularServidor(
+      resposta({ cotacoes: [cotacao('AXIA3', null)] }),
+      resposta({ cotacoes: [cotacao('AXIA3', 4200)] }),
+    );
+    let visibilidade: DocumentVisibilityState = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibilidade);
+    render(<App />);
+    await avancar();
+
+    visibilidade = 'hidden';
+    await avancar(ESPERA_ACAO_SEM_DADOS_MS * 2);
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+
+    // Voltou bem antes de 5 minutos: a busca rápida que ficou para trás sai agora.
+    visibilidade = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    await avancar();
+    expect(fetchFalso).toHaveBeenCalledTimes(2);
+    expect(quadrados()[0]).toHaveTextContent('R$ 42,00');
+  });
+
+  it('voltar para a aba durante uma busca não abre outra', async () => {
+    let responder: (r: Response) => void = () => {};
+    const fetchFalso = vi.fn(
+      () =>
+        new Promise<Response>((resolver) => {
+          responder = resolver;
+        }),
+    );
+    vi.stubGlobal('fetch', fetchFalso);
+    render(<App />);
+    vi.setSystemTime(Date.now() + INTERVALO_ATUALIZACAO_MS * 2);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await avancar();
+
+    expect(fetchFalso).toHaveBeenCalledTimes(1);
+    responder(Response.json(resposta()));
+    await avancar();
+    expect(quadrados()).toHaveLength(2);
+  });
+
+  it('fechar no meio de uma busca cancela o pedido sem mexer na tela', async () => {
+    let sinal: AbortSignal | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, opcoes?: RequestInit) => {
+        sinal = opcoes?.signal ?? undefined;
+        return new Promise(() => {});
+      }),
+    );
+    const erroDoConsole = vi.spyOn(console, 'error');
+    const { unmount } = render(<App />);
+    await avancar();
+
+    unmount();
+    await avancar(INTERVALO_ATUALIZACAO_MS);
+
+    expect(sinal?.aborted).toBe(true);
+    expect(erroDoConsole).not.toHaveBeenCalled();
+  });
+
+  it('servidor fora do ar na abertura: tenta de novo em 1 minuto e mostra a grade', async () => {
+    const fetchFalso = simularServidor(new TypeError('Failed to fetch'), resposta());
+    render(<App />);
+    await avancar();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    await avancar(ESPERA_APOS_FALHA_MS);
+
+    expect(fetchFalso).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(quadrados()).toHaveLength(2);
+  });
+
+  it('com o StrictMode (desenvolvimento), não duplica a atualização periódica', async () => {
+    const fetchFalso = simularServidor(resposta());
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await avancar();
+    const naAbertura = fetchFalso.mock.calls.length;
+
+    await avancar(INTERVALO_ATUALIZACAO_MS);
+
+    expect(fetchFalso).toHaveBeenCalledTimes(naAbertura + 1);
+    expect(quadrados()).toHaveLength(2);
+  });
+});
+
+describe('LimiteDeErro', () => {
+  afterEach(cleanup);
+
+  it('erro inesperado ao desenhar vira mensagem, não página em branco', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const Quebra = () => {
+      throw new Error('falha');
+    };
+    render(
+      <LimiteDeErro>
+        <Quebra />
+      </LimiteDeErro>,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Algo deu errado ao mostrar o painel');
   });
 });

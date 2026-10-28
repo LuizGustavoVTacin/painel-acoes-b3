@@ -89,6 +89,11 @@ function partesEmBrasilia(data: Date): Partial<Record<Intl.DateTimeFormatPartTyp
   );
 }
 
+/** Indica se o texto é um instante ISO completo, com fuso, que formatarHorario aceita. */
+export function ehInstanteISO(texto: string): boolean {
+  return instanteValido(texto) !== null;
+}
+
 /** Indica se o texto é uma data ISO "AAAA-MM-DD" que existe no calendário. */
 export function ehDataISO(texto: string): boolean {
   const partes = PADRAO_ISO.exec(texto);

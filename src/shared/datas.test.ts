@@ -1,5 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { ehDataISO, formatarData, formatarHorario, hojeEmBrasilia, lerDataBR } from './datas.js';
+import {
+  ehDataISO,
+  ehInstanteISO,
+  formatarData,
+  formatarHorario,
+  hojeEmBrasilia,
+  lerDataBR,
+} from './datas.js';
+
+describe('ehInstanteISO', () => {
+  it.each(['2026-10-27T20:44:12.000Z', '2026-10-27T17:44-03:00'])('aceita %s', (texto) => {
+    expect(ehInstanteISO(texto)).toBe(true);
+  });
+
+  it.each([
+    '2026-10-27',
+    '2026-10-27 17:00',
+    '2026-10-27T17:00:00',
+    'Tue Oct 27 2026',
+    '+010000-01-01T00:00:00.000Z',
+    '2026-02-30T10:00:00Z',
+  ])('recusa %s (formatarHorario também recusaria)', (texto) => {
+    expect(ehInstanteISO(texto)).toBe(false);
+    expect(() => formatarHorario(texto)).toThrow(RangeError);
+  });
+});
 
 describe('ehDataISO', () => {
   it('aceita datas existentes e recusa as demais', () => {

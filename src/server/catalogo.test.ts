@@ -291,6 +291,26 @@ describe('logos', () => {
     expect(await catalogo.logo('BBAS3')).toBeNull();
   });
 
+  it('catálogo ainda não carregado (Yahoo cobrindo tudo): carrega antes de buscar o logo', async () => {
+    const { catalogo, requisicoes } = montar({
+      [URL_LISTA_BRAPI]: listaBrapi(),
+      [URL_LOGO]: svg('<svg id="a"/>'),
+    });
+
+    const logo = await catalogo.logo('BBAS3');
+
+    expect(logo?.tipo).toBe('image/svg+xml');
+    expect(requisicoes.map((r) => r.url)).toEqual([URL_LISTA_BRAPI, URL_LOGO]);
+  });
+
+  it('ação fora do catálogo não recarrega a lista a cada pedido de logo', async () => {
+    const { catalogo, requisicoes } = await comCatalogo(svg());
+
+    expect(await catalogo.logo('XXXX3')).toBeNull();
+    expect(await catalogo.logo('XXXX3')).toBeNull();
+    expect(requisicoes).toHaveLength(1); // só a lista, dentro do limite de 15 minutos
+  });
+
   it('ação sem endereço de logo no catálogo não gera requisição', async () => {
     const { catalogo, requisicoes } = await comCatalogo(svg());
 

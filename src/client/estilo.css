@@ -98,7 +98,7 @@ body {
 /* Grade: menos colunas em telas menores; o restante aparece rolando a página. */
 .grade {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 12px;
   margin: 0;
   padding: 0;
@@ -113,7 +113,10 @@ body {
   justify-content: center;
   gap: 6px;
   aspect-ratio: 1;
+  /* Sem isso o conteúdo pode esticar a linha e o quadrado deixa de ser quadrado. */
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   padding: 12px;
   border: 1px solid var(--borda);
   border-radius: 12px;
@@ -122,8 +125,9 @@ body {
 }
 
 .logo {
-  width: 48px;
-  height: 48px;
+  flex: none;
+  width: 44px;
+  height: 44px;
   border-radius: 10px;
   object-fit: contain;
 }

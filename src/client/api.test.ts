@@ -22,9 +22,14 @@ describe('lerRespostaCotacoes', () => {
     ['lista', []],
     ['sem cotações', { ...resposta(), cotacoes: undefined }],
     ['mercado em texto', { ...resposta(), mercadoAberto: 'sim' }],
-    ['fonte em uso desconhecida', { ...resposta(), fontesEmUso: ['google'] }],
-    ['ticker inválido sem cotação no Yahoo', { ...resposta(), semCotacaoNoYahoo: ['ibov'] }],
+    ['sem fontes em uso', { ...resposta(), fontesEmUso: 'yahoo' }],
+    ['sem a lista de ações fora do Yahoo', { ...resposta(), semCotacaoNoYahoo: null }],
     ['sem fontes', { ...resposta(), fontes: null }],
+  ])('recusa estrutura errada: %s', (_caso, corpo) => {
+    expect(() => lerRespostaCotacoes(corpo)).toThrow(ErroApi);
+  });
+
+  it.each([
     ['preço fracionado', resposta({ cotacoes: [cotacao('BBAS3', 17.38)] })],
     ['preço zero', resposta({ cotacoes: [cotacao('BBAS3', 0)] })],
     [
@@ -40,10 +45,43 @@ describe('lerRespostaCotacoes', () => {
       'desatualizada ausente',
       { ...resposta(), cotacoes: [{ ...cotacao('BBAS3', 1738), desatualizada: undefined }] },
     ],
-    ['provedor desconhecido', { ...resposta(), fontes: [{ ...fonte('yahoo'), provedor: 'x' }] }],
-    ['situação desconhecida', { ...resposta(), fontes: [{ ...fonte('yahoo'), situacao: 'paga' }] }],
-  ])('recusa: %s', (_caso, corpo) => {
-    expect(() => lerRespostaCotacoes(corpo)).toThrow(ErroApi);
+    [
+      'horário sem fuso',
+      resposta({ cotacoes: [cotacao('BBAS3', 1738, { atualizadoEm: '2026-10-27T17:00:00' })] }),
+    ],
+    [
+      'data sem horário',
+      resposta({ cotacoes: [cotacao('BBAS3', 1738, { negociadoEm: '2026-10-27' })] }),
+    ],
+  ])('descarta só a cotação inválida: %s', (_caso, corpo) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const comValida = { ...corpo, cotacoes: [...corpo.cotacoes, cotacao('PETR4', 5279)] };
+
+    expect(lerRespostaCotacoes(comValida).cotacoes).toEqual([cotacao('PETR4', 5279)]);
+    expect(console.warn).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['provedor desconhecido', { ...fonte('yahoo'), provedor: 'x' }],
+    ['situação desconhecida', { ...fonte('yahoo'), situacao: 'paga' }],
+    ['horário inválido', { ...fonte('yahoo'), desde: 'ontem' }],
+  ])('descarta só a fonte inválida: %s', (_caso, invalida) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const corpo = { ...resposta(), fontes: [invalida, fonte('brapi')] };
+
+    expect(lerRespostaCotacoes(corpo).fontes).toEqual([fonte('brapi')]);
+  });
+
+  it('ignora fontes em uso e códigos desconhecidos, mantendo os válidos', () => {
+    const corpo = {
+      ...resposta(),
+      fontesEmUso: ['google', 'brapi'],
+      semCotacaoNoYahoo: ['ibov', 'ELET3'],
+    };
+
+    const lida = lerRespostaCotacoes(corpo);
+    expect(lida.fontesEmUso).toEqual(['brapi']);
+    expect(lida.semCotacaoNoYahoo).toEqual(['ELET3']);
   });
 });
 

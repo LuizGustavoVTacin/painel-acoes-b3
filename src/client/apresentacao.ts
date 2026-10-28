@@ -1,3 +1,4 @@
+import { ehInstanteISO, formatarHorario } from '../shared/datas';
 import type {
   Cotacao,
   EstadoFonte,
@@ -14,7 +15,7 @@ const NOME_FONTE: Record<FonteCotacao, string> = {
 const NOME_PROVEDOR: Record<Provedor, string> = {
   yahoo: 'Yahoo Finance',
   brapi: 'brapi',
-  brapi_icones: 'Logos da brapi',
+  brapi_icones: 'Servidor de logos da brapi',
 };
 
 /** Ordem dos avisos no rodapé: primeiro a fonte principal. */
@@ -52,7 +53,25 @@ export interface Aviso {
   texto: string;
 }
 
-function avisoDaFonte({ provedor, situacao, mensagem }: EstadoFonte): Aviso | null {
+/** O que a tela mostra enquanto a API está fora. */
+function substituto(provedor: Provedor, fontesEmUso: readonly FonteCotacao[]): string {
+  if (provedor === 'brapi_icones') return 'Os logos já salvos continuam aparecendo.';
+  if (provedor === 'yahoo' && fontesEmUso.includes('brapi')) {
+    return 'Usando a brapi como reserva.';
+  }
+  return 'Usando os últimos dados salvos.';
+}
+
+function proximaVerificacao(proximaTentativa: string | null): string {
+  return proximaTentativa && ehInstanteISO(proximaTentativa)
+    ? `Nova verificação em ${formatarHorario(proximaTentativa)}.`
+    : 'Nova verificação em até 24 h.';
+}
+
+function avisoDaFonte(
+  { provedor, situacao, mensagem, proximaTentativa }: EstadoFonte,
+  fontesEmUso: readonly FonteCotacao[],
+): Aviso | null {
   const nome = NOME_PROVEDOR[provedor];
   switch (situacao) {
     case 'ok':
@@ -60,26 +79,30 @@ function avisoDaFonte({ provedor, situacao, mensagem }: EstadoFonte): Aviso | nu
     case 'instavel':
       return {
         nivel: 'atencao',
-        texto: `${nome} indisponível no momento. Usando os últimos dados salvos.`,
+        texto: `${nome}: indisponível no momento. ${substituto(provedor, fontesEmUso)}`,
       };
     case 'bloqueada':
       return {
         nivel: 'erro',
-        texto: `${nome} passou a exigir pagamento ou chave e não está sendo usada. Nova verificação em até 24 h.`,
+        texto: `${nome}: passou a exigir pagamento ou chave e o app parou de chamá-lo. ${substituto(provedor, fontesEmUso)} ${proximaVerificacao(proximaTentativa)}`,
       };
     case 'formato_alterado':
       return {
         nivel: 'erro',
-        texto: `${nome} mudou o formato dos dados e não está sendo usada. Nova verificação em até 24 h.`,
+        texto: `${nome}: mudou o formato dos dados e o app parou de chamá-lo. ${substituto(provedor, fontesEmUso)} ${proximaVerificacao(proximaTentativa)}`,
       };
   }
 }
 
 /** Avisos do rodapé: situação de cada API e ações que o Yahoo não conhece. */
-export function avisosDoRodape({ fontes, semCotacaoNoYahoo }: RespostaCotacoes): Aviso[] {
+export function avisosDoRodape({
+  fontes,
+  fontesEmUso,
+  semCotacaoNoYahoo,
+}: RespostaCotacoes): Aviso[] {
   const avisos = [...fontes]
     .sort((a, b) => ORDEM_PROVEDORES.indexOf(a.provedor) - ORDEM_PROVEDORES.indexOf(b.provedor))
-    .map(avisoDaFonte)
+    .map((fonte) => avisoDaFonte(fonte, fontesEmUso))
     .filter((aviso): aviso is Aviso => aviso !== null);
   if (semCotacaoNoYahoo.length > 0) {
     avisos.push({

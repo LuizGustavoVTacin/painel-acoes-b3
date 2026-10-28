@@ -252,14 +252,16 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
     }
   }
 
+  /** Atualiza o catálogo se estiver velho; falhas ficam registradas e nunca são lançadas. */
+  function garantirAtualizado(): Promise<void> {
+    atualizacaoEmAndamento ??= atualizarCatalogo().finally(() => {
+      atualizacaoEmAndamento = null;
+    });
+    return atualizacaoEmAndamento;
+  }
+
   return {
-    /** Atualiza o catálogo se estiver velho; falhas ficam registradas e nunca são lançadas. */
-    garantirAtualizado(): Promise<void> {
-      atualizacaoEmAndamento ??= atualizarCatalogo().finally(() => {
-        atualizacaoEmAndamento = null;
-      });
-      return atualizacaoEmAndamento;
-    },
+    garantirAtualizado,
 
     listar(busca = ''): AcaoCatalogo[] {
       const termo = simplificar(busca.trim());
@@ -294,7 +296,10 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
       const vencido = [salvo?.verificado_em, logosConferidosEm.get(ticker)].every((t) =>
         passou(VALIDADE_LOGO_MS, t, momento),
       );
-      const url = (buscarLogoUrl.get(ticker) as { logo_url: string | null } | undefined)?.logo_url;
+      const lerUrl = () => buscarLogoUrl.get(ticker) as { logo_url: string | null } | undefined;
+      // Com o Yahoo funcionando, ninguém mais carrega o catálogo: o logo precisa dele.
+      if (!lerUrl()) await garantirAtualizado();
+      const url = lerUrl()?.logo_url;
 
       if (vencido && url && podeChamar(estado, 'brapi_icones', momento)) {
         let conferencia = logosEmAndamento.get(ticker);
