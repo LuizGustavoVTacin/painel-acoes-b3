@@ -93,9 +93,7 @@ export function classificarFalha(
   corpoTexto: string,
   agora: Date,
 ): ErroFonte {
-  if (status === 402 || temCabecalhoDeCobranca(cabecalhos)) {
-    return new ErroFonte('bloqueada', MENSAGEM_COBRANCA, status);
-  }
+  // Limite e instabilidade vêm antes: um aviso de cobrança num 429/5xx não vira bloqueio de 24 h.
   if (status === 429) {
     return new ErroFonte(
       'instavel',
@@ -107,8 +105,8 @@ export function classificarFalha(
   if (status >= 500 || status === 408) {
     return new ErroFonte('instavel', `A API respondeu com erro ${status}`, status);
   }
-  // Demais 4xx: o texto diz se é cobrança (ex.: "MISSING_TOKEN") ou outra coisa.
-  if (mencionaCobranca(corpoTexto)) {
+  // Demais 4xx: status, cabeçalhos ou texto dizem se é cobrança (ex.: "MISSING_TOKEN").
+  if (status === 402 || temCabecalhoDeCobranca(cabecalhos) || mencionaCobranca(corpoTexto)) {
     return new ErroFonte('bloqueada', MENSAGEM_COBRANCA, status);
   }
   if (status === 401 || status === 403) {

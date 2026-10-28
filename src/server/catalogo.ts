@@ -68,6 +68,13 @@ function passou(intervaloMs: number, desde: string | undefined, agora: Date): bo
   return !(decorrido >= 0 && decorrido < intervaloMs);
 }
 
+/** Erro de regra do banco (CHECK, UNIQUE...): recusa só a linha e não desfaz a transação. */
+function ehViolacaoDeRegra(erro: unknown): boolean {
+  const SQLITE_CONSTRAINT = 19;
+  const codigo = (erro as { errcode?: unknown } | null)?.errcode;
+  return typeof codigo === 'number' && (codigo & 0xff) === SQLITE_CONSTRAINT;
+}
+
 /** Limita quantas promessas rodam ao mesmo tempo. */
 function criarLimitador(maximo: number) {
   let ativas = 0;
@@ -115,26 +122,40 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
   );
 
   let atualizacaoEmAndamento: Promise<void> | null = null;
+  let ultimaChamadaCatalogo: string | undefined;
   const logosEmAndamento = new Map<Ticker, Promise<void>>();
   const limitarDownloads = criarLimitador(DOWNLOADS_SIMULTANEOS);
 
   const mesAtual = (momento: Date) => hojeEmBrasilia(momento).slice(0, 7);
 
-  /** Registra a falha sem nunca lançar: um erro aqui não pode derrubar a rota. */
+  /** Executa uma gravação auxiliar sem nunca lançar: um erro aqui não pode derrubar a rota. */
+  function semFalhar(descricao: string, gravacao: () => void): void {
+    try {
+      gravacao();
+    } catch (erro) {
+      console.error(`Não foi possível ${descricao}:`, erro);
+    }
+  }
+
   function registrarFalha(provedor: Provedor, erro: unknown, momento: Date): void {
     const falha =
       erro instanceof ErroFonte
         ? erro
         : new ErroFonte('instavel', 'Erro inesperado ao processar os dados da API');
     if (!(erro instanceof ErroFonte)) console.error(`Erro inesperado (${provedor}):`, erro);
-    try {
-      estado.registrarFalha(provedor, falha, momento);
-    } catch (erroAoRegistrar) {
-      console.error(`Não foi possível registrar a falha de ${provedor}:`, erroAoRegistrar);
-    }
+    semFalhar(`registrar a falha de ${provedor}`, () =>
+      estado.registrarFalha(provedor, falha, momento),
+    );
   }
 
-  /** Grava os itens um a um: um item recusado pelo banco não impede os demais. */
+  function contarUso(provedor: Provedor, momento: Date): void {
+    semFalhar(`contar o uso de ${provedor}`, () => uso.registrar(provedor, mesAtual(momento)));
+  }
+
+  /**
+   * Grava os itens um a um: um item recusado por uma regra do banco não impede os demais.
+   * Outros erros (disco cheio, banco travado) desfazem a transação e são lançados.
+   */
   function salvarItens(itens: { ticker: Ticker }[], momento: Date): number {
     let gravados = 0;
     emTransacao(banco, () => {
@@ -143,6 +164,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
           gravarItem.run({ ...item, agora: momento.toISOString() });
           gravados++;
         } catch (erro) {
+          if (!ehViolacaoDeRegra(erro)) throw erro;
           console.warn(`Ação ${item.ticker} ignorada no catálogo:`, (erro as Error).message);
         }
       }
@@ -152,23 +174,31 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
 
   async function atualizarCatalogo(): Promise<void> {
     const momento = agora();
-    const anterior = estado.consultar('brapi')?.ultimaTentativa;
+    // A última chamada fica também em memória: se o banco não gravar o estado, a pausa vale.
+    const anterior = [estado.consultar('brapi')?.ultimaTentativa, ultimaChamadaCatalogo]
+      .filter((instante) => instante !== undefined)
+      .sort()
+      .at(-1);
     if (!passou(INTERVALO_MINIMO_CATALOGO_MS, anterior, momento)) return;
     if (!estado.podeChamar('brapi', momento)) return;
 
-    uso.registrar('brapi', mesAtual(momento));
+    ultimaChamadaCatalogo = momento.toISOString();
+    contarUso('brapi', momento);
     try {
       const conhecidas = (contarItens.get() as { total: number }).total;
       const { itens, avisoDeCobranca } = await buscarListaBrapi(buscar, momento);
-      salvarItens(itens, momento);
+      const gravados = salvarItens(itens, momento);
 
-      const listaEncolheu = itens.length < conhecidas * FRACAO_MINIMA_DA_LISTA;
       const aviso = avisoDeCobranca
         ? AVISO_DE_COBRANCA
-        : listaEncolheu
-          ? `A brapi devolveu menos ações que o normal (${itens.length} de ${conhecidas})`
-          : null;
-      estado.registrarSucesso('brapi', momento, aviso);
+        : gravados < conhecidas * FRACAO_MINIMA_DA_LISTA
+          ? `A brapi devolveu menos ações que o normal (${gravados} de ${conhecidas})`
+          : gravados < itens.length
+            ? `${itens.length - gravados} ações da brapi foram ignoradas por dados inválidos`
+            : null;
+      semFalhar('registrar o sucesso da brapi', () =>
+        estado.registrarSucesso('brapi', momento, aviso),
+      );
     } catch (erro) {
       registrarFalha('brapi', erro, momento);
     }
@@ -176,6 +206,8 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
 
   async function conferirLogo(ticker: Ticker, url: string, salvo: LinhaLogo | undefined) {
     const momento = agora();
+    // Pedidos que esperaram na fila conferem de novo: outro download pode ter pausado a fonte.
+    if (!estado.podeChamar('brapi_icones', momento)) return;
     const manter = {
       ticker,
       conteudo: salvo?.conteudo ?? null,
@@ -183,22 +215,26 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
       etag: salvo?.etag ?? null,
       verificadoEm: momento.toISOString(),
     };
+    const gravar = (linha: typeof manter) =>
+      semFalhar(`salvar o logo de ${ticker}`, () => gravarLogo.run(linha));
 
-    uso.registrar('brapi_icones', mesAtual(momento));
+    contarUso('brapi_icones', momento);
     try {
       const resposta = await requisitarExterno(buscar, url, momento, {
         limiteBytes: LIMITE_LOGO_BYTES,
         cabecalhos: salvo?.etag && salvo.conteudo ? { 'if-none-match': salvo.etag } : {},
         statusAceitos: [304, 404],
       });
-      estado.registrarSucesso(
-        'brapi_icones',
-        momento,
-        resposta.avisoDeCobranca ? AVISO_DE_COBRANCA : null,
+      semFalhar('registrar o sucesso dos logos', () =>
+        estado.registrarSucesso(
+          'brapi_icones',
+          momento,
+          resposta.avisoDeCobranca ? AVISO_DE_COBRANCA : null,
+        ),
       );
       const tipo = resposta.cabecalhos.get('content-type')?.split(';')[0].trim() ?? '';
       if (resposta.status === 200 && TIPOS_DE_LOGO.has(tipo) && resposta.corpo.byteLength > 0) {
-        gravarLogo.run({
+        gravar({
           ...manter,
           conteudo: resposta.corpo,
           tipo,
@@ -207,8 +243,14 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
         return;
       }
       // 304 (não mudou), 404 (sem logo) ou tipo inesperado: mantém o que havia até amanhã.
-      gravarLogo.run(manter);
+      gravar(manter);
     } catch (erro) {
+      if (erro instanceof ErroFonte && erro.situacao === 'formato_alterado') {
+        // Problema deste logo (grande demais, status estranho): só ele espera até amanhã.
+        console.warn(`Logo de ${ticker} ignorado: ${erro.message}`);
+        gravar(manter);
+        return;
+      }
       const temporaria = erro instanceof ErroFonte && erro.situacao === 'instavel';
       // Falha temporária: pausa os downloads de logo por alguns minutos, não por um dia.
       const falha = temporaria
@@ -221,7 +263,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
         : erro;
       registrarFalha('brapi_icones', falha, momento);
       // Sem logo salvo e falha temporária: nada a gravar, para tentar de novo em breve.
-      if (!(temporaria && !salvo)) gravarLogo.run(manter);
+      if (!(temporaria && !salvo)) gravar(manter);
     }
   }
 

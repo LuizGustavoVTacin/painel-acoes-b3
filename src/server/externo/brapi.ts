@@ -88,13 +88,23 @@ export async function buscarListaBrapi(buscar: Buscar, agora: Date): Promise<Lis
     limiteBytes: LIMITE_LISTA_BYTES,
   });
   const texto = new TextDecoder().decode(corpo);
+  let json: unknown;
   try {
-    return { itens: interpretarListaBrapi(JSON.parse(texto)), avisoDeCobranca };
-  } catch (erro) {
-    // Uma resposta 200 sem dados que fala em chave ou plano é bloqueio, não mudança de formato.
-    if (mencionaCobranca(texto.slice(0, 2000))) {
-      throw new ErroFonte('bloqueada', MENSAGEM_COBRANCA, 200);
-    }
-    throw erro instanceof ErroFonte ? erro : formatoAlterado('resposta não é JSON');
+    json = JSON.parse(texto);
+  } catch {
+    throw mensagemDeCobranca(texto.slice(0, 2000)) ?? formatoAlterado('resposta não é JSON');
   }
+  try {
+    return { itens: interpretarListaBrapi(json), avisoDeCobranca };
+  } catch (erro) {
+    // Só os campos de mensagem contam: nomes de empresas como "Plano & Plano" não são cobrança.
+    const { message, error } = (json ?? {}) as { message?: unknown; error?: unknown };
+    const textoDoErro = [message, error].filter((v) => typeof v === 'string').join(' ');
+    throw mensagemDeCobranca(textoDoErro) ?? erro;
+  }
+}
+
+/** Uma resposta 200 sem dados que fala em chave ou plano é bloqueio, não mudança de formato. */
+function mensagemDeCobranca(texto: string): ErroFonte | null {
+  return mencionaCobranca(texto) ? new ErroFonte('bloqueada', MENSAGEM_COBRANCA, 200) : null;
 }

@@ -5,6 +5,7 @@ import { abrirBanco, type Banco } from './banco/conexao.js';
 import { criarRepositorioUsoApi } from './banco/usoApi.js';
 import { criarServicoCatalogo } from './catalogo.js';
 import { URL_LISTA_BRAPI } from './externo/brapi.js';
+import { ErroFonte } from './externo/erroFonte.js';
 import { criarEstadoFontes } from './externo/estadoFontes.js';
 import { criarFetchFalso, json, svg, type RequisicaoRegistrada } from './testes/fetchFalso.js';
 
@@ -550,5 +551,161 @@ describe('robustez (pontos da revisão)', () => {
 
     expect(logos.every((logo) => logo !== null)).toBe(true);
     expect(pico).toBe(4);
+  });
+});
+
+describe('robustez (segunda revisão)', () => {
+  const logoDe = (ticker: string) => `https://icons.brapi.dev/icons/${ticker}.svg`;
+  const listaCom = (tickers: string[]) =>
+    json({ stocks: tickers.map((t) => ({ stock: t, name: t, close: 10, logo: logoDe(t) })) });
+  const atrasado = (resposta: () => Response, ms: number) => async () => {
+    await new Promise((resolver) => setTimeout(resolver, ms));
+    return resposta();
+  };
+
+  it('avisa quantas ações foram recusadas pelo banco', async () => {
+    const { catalogo, estado } = montar({ [URL_LISTA_BRAPI]: listaBrapi() });
+    banco.exec(`CREATE TEMP TRIGGER recusa_itub BEFORE INSERT ON catalogo
+      WHEN NEW.ticker = 'ITUB4' BEGIN SELECT RAISE(ABORT, 'recusado'); END`);
+
+    await catalogo.garantirAtualizado();
+
+    expect(estado.consultar('brapi')?.mensagem).toBe(
+      '1 ações da brapi foram ignoradas por dados inválidos',
+    );
+  });
+
+  it('erro do banco que não é regra desfaz o catálogo inteiro e marca instabilidade', async () => {
+    const { catalogo, estado } = montar({ [URL_LISTA_BRAPI]: listaBrapi() });
+    // abs() do menor inteiro estoura: erro comum do SQLite, não violação de regra.
+    banco.exec(`CREATE TEMP TRIGGER estoura BEFORE INSERT ON catalogo
+      WHEN NEW.ticker = 'ITUB4' BEGIN SELECT abs(-9223372036854775807 - 1); END`);
+
+    await catalogo.garantirAtualizado();
+
+    expect(catalogo.listar()).toEqual([]);
+    expect(estado.consultar('brapi')?.situacao).toBe('instavel');
+  });
+
+  it('se o banco não grava o estado, a pausa de 15 minutos continua valendo', async () => {
+    const { catalogo, estado, requisicoes } = montar({
+      [URL_LISTA_BRAPI]: json({}, { status: 503 }),
+    });
+    vi.spyOn(estado, 'registrarFalha').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+
+    await catalogo.garantirAtualizado();
+    avancar(MINUTO);
+    await catalogo.garantirAtualizado();
+
+    expect(requisicoes).toHaveLength(1);
+  });
+
+  it('falha ao contar o uso não derruba a rota do catálogo', async () => {
+    const { buscar } = criarFetchFalso({ [URL_LISTA_BRAPI]: listaBrapi() });
+    const uso = criarRepositorioUsoApi(banco);
+    vi.spyOn(uso, 'registrar').mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    const estado = criarEstadoFontes(banco);
+    const catalogo = criarServicoCatalogo({ banco, buscar, agora: () => agora, estado, uso });
+
+    await expect(catalogo.garantirAtualizado()).resolves.toBeUndefined();
+    expect(catalogo.listar()).toHaveLength(2);
+  });
+
+  it('logo grande demais afeta só aquela ação, não pausa os demais', async () => {
+    const { catalogo, estado } = montar({
+      [URL_LISTA_BRAPI]: listaCom(['ABCD3', 'EFGH3']),
+      [logoDe('ABCD3')]: () =>
+        new Response('x', {
+          headers: { 'content-length': '300000', 'content-type': 'image/svg+xml' },
+        }),
+      [logoDe('EFGH3')]: svg(),
+    });
+    await catalogo.garantirAtualizado();
+
+    expect(await catalogo.logo('ABCD3')).toBeNull();
+    expect(await catalogo.logo('EFGH3')).not.toBeNull();
+    expect(estado.podeChamar('brapi_icones', agora)).toBe(true);
+  });
+
+  it('sucesso em paralelo não apaga a pausa pedida por outro download', async () => {
+    const { catalogo, estado } = montar({
+      [URL_LISTA_BRAPI]: listaCom(['ABCD3', 'EFGH3', 'IJKL3']),
+      [logoDe('ABCD3')]: () => json({}, { status: 429, headers: { 'Retry-After': '600' } }),
+      [logoDe('EFGH3')]: atrasado(() => svg(), 10),
+      [logoDe('IJKL3')]: atrasado(() => svg(), 10),
+    });
+    await catalogo.garantirAtualizado();
+
+    await Promise.all(['ABCD3', 'EFGH3', 'IJKL3'].map((t) => catalogo.logo(t)));
+
+    expect(estado.consultar('brapi_icones')).toMatchObject({
+      situacao: 'instavel',
+      proximaTentativa: '2026-10-27T15:10:00.000Z',
+    });
+    expect(estado.podeChamar('brapi_icones', agora)).toBe(false);
+  });
+
+  it('pedidos de logo na fila respeitam o bloqueio feito pelos primeiros', async () => {
+    const tickers = ['ABCD3', 'EFGH3', 'IJKL3', 'MNOP3', 'QRST3', 'UVWX3'];
+    const { catalogo, requisicoes } = montar({
+      [URL_LISTA_BRAPI]: listaCom(tickers),
+      'https://icons.brapi.dev/': atrasado(() => json({}, { status: 402 }), 5),
+    });
+    await catalogo.garantirAtualizado();
+
+    await Promise.all(tickers.map((t) => catalogo.logo(t)));
+
+    expect(requisicoes.filter((r) => r.url.includes('icons'))).toHaveLength(4);
+  });
+
+  it('download de logo que falha libera a vaga para os próximos', async () => {
+    const tickers = Array.from({ length: 10 }, (_, i) => `ABC${String.fromCharCode(65 + i)}3`);
+    const ruins = new Set(tickers.slice(0, 4));
+    const respostas: Parameters<typeof criarFetchFalso>[0] = {
+      [URL_LISTA_BRAPI]: listaCom(tickers),
+    };
+    for (const t of tickers) {
+      respostas[logoDe(t)] = ruins.has(t)
+        ? () => new Response('x', { headers: { 'content-length': '300000' } })
+        : svg();
+    }
+    const { catalogo } = montar(respostas);
+    await catalogo.garantirAtualizado();
+
+    const logos = await Promise.all(tickers.map((t) => catalogo.logo(t)));
+
+    expect(logos.filter((l) => l !== null)).toHaveLength(6);
+  });
+});
+
+describe('estado das fontes: datas e relógio', () => {
+  it('ignora uma data de espera inválida', () => {
+    const estado = criarEstadoFontes(banco);
+    const erro = new ErroFonte('instavel', 'x', 429, new Date(NaN));
+
+    estado.registrarFalha('brapi', erro, agora);
+
+    expect(estado.consultar('brapi')?.proximaTentativa).toBeNull();
+    expect(estado.podeChamar('brapi', agora)).toBe(true);
+  });
+
+  it('bloqueio de 24 h resiste a um pequeno atraso do relógio', () => {
+    const estado = criarEstadoFontes(banco);
+    estado.registrarFalha('brapi', new ErroFonte('bloqueada', 'pagar', 402), agora);
+
+    expect(estado.podeChamar('brapi', new Date(agora.getTime() - 2000))).toBe(false);
+    expect(estado.podeChamar('brapi', new Date(agora.getTime() + 24 * HORA - 1))).toBe(false);
+    expect(estado.podeChamar('brapi', new Date(agora.getTime() + 24 * HORA))).toBe(true);
+  });
+
+  it('espera absurda deixada por um relógio adiantado é ignorada', () => {
+    const estado = criarEstadoFontes(banco);
+    estado.registrarFalha('brapi', new ErroFonte('bloqueada', 'pagar', 402), agora);
+
+    expect(estado.podeChamar('brapi', new Date(agora.getTime() - 3 * HORA))).toBe(true);
   });
 });

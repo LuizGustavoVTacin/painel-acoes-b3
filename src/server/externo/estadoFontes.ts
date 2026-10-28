@@ -42,6 +42,20 @@ function paraEstado(linha: LinhaEstado): EstadoFonte {
   };
 }
 
+/** Folga para pequenos acertos do relógio (sincronização do Windows) ao conferir esperas. */
+const FOLGA_RELOGIO_MS = 60 * 60 * 1000;
+
+/**
+ * Verdadeiro enquanto a API estiver em espera (bloqueada, formato alterado ou limite atingido).
+ * Uma espera que terminaria bem mais de 24 h no futuro só existe se o relógio do computador
+ * foi atrasado depois de gravada; nesse caso é ignorada, para não travar a API por dias.
+ */
+function emEspera(estado: EstadoFonte | null, agora: Date): boolean {
+  if (!estado?.proximaTentativa) return false;
+  const faltaMs = Date.parse(estado.proximaTentativa) - agora.getTime();
+  return faltaMs > 0 && faltaMs <= INTERVALO_RECHECAGEM_MS + FOLGA_RELOGIO_MS;
+}
+
 export type EstadoFontes = ReturnType<typeof criarEstadoFontes>;
 
 /** Guarda no banco a situação de cada API externa, para avisar o usuário e evitar chamadas inúteis. */
@@ -75,20 +89,16 @@ export function criarEstadoFontes(banco: Banco) {
       return (listarTodas.all() as unknown as LinhaEstado[]).map(paraEstado);
     },
 
-    /**
-     * Falso enquanto a API estiver em espera (bloqueada, formato alterado ou limite atingido).
-     * Esperas que terminariam mais de 24 h no futuro só existem se o relógio do computador
-     * foi atrasado depois de gravadas; nesse caso a espera é ignorada.
-     */
     podeChamar(provedor: Provedor, agora: Date): boolean {
-      const proxima = consultar(provedor)?.proximaTentativa;
-      if (!proxima) return true;
-      const faltaMs = Date.parse(proxima) - agora.getTime();
-      return faltaMs <= 0 || faltaMs > INTERVALO_RECHECAGEM_MS;
+      return !emEspera(consultar(provedor), agora);
     },
 
-    /** Registra sucesso; um aviso opcional fica visível sem tirar a API de uso. */
+    /**
+     * Registra sucesso; um aviso opcional fica visível sem tirar a API de uso. Se outro pedido
+     * em paralelo acabou de pôr a API em espera, a espera prevalece.
+     */
     registrarSucesso(provedor: Provedor, agora: Date, aviso: string | null = null): void {
+      if (emEspera(consultar(provedor), agora)) return;
       const momento = agora.toISOString();
       gravar.run({
         provedor,

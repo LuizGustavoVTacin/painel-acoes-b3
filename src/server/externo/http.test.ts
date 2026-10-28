@@ -142,6 +142,15 @@ describe('requisitarExterno', () => {
     );
   });
 
+  it.each([429, 503])('aviso de cobrança num %s continua sendo instabilidade', async (status) => {
+    const resposta = json({}, { status, headers: { 'X-Brapi-Billing-Warning': 'near limit' } });
+    const { buscar } = criarFetchFalso({ [URL_OK]: resposta });
+
+    expect((await falha(requisitarExterno(buscar, URL_OK, AGORA, opcoes))).situacao).toBe(
+      'instavel',
+    );
+  });
+
   it('cabeçalho de cobrança num erro marca bloqueio', async () => {
     const resposta = json({}, { status: 400, headers: { 'X-Brapi-Upgrade-Url': 'https://x' } });
     const { buscar } = criarFetchFalso({ [URL_OK]: resposta });

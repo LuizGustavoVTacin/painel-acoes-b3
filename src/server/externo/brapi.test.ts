@@ -123,6 +123,24 @@ describe('buscarListaBrapi', () => {
     await expect(buscarListaBrapi(buscar, AGORA)).rejects.toMatchObject({ situacao: 'bloqueada' });
   });
 
+  it('nomes de empresas como "Plano & Plano" não viram alarme de pagamento', async () => {
+    const { buscar } = criarFetchFalso({
+      [URL_LISTA_BRAPI]: json({ results: [acao('PLPL3', { name: 'PLANO & PLANO Premium' })] }),
+    });
+
+    await expect(buscarListaBrapi(buscar, AGORA)).rejects.toMatchObject({
+      situacao: 'formato_alterado',
+    });
+  });
+
+  it('texto não-JSON pedindo assinatura é bloqueio', async () => {
+    const { buscar } = criarFetchFalso({
+      [URL_LISTA_BRAPI]: new Response('Faça upgrade do seu plano'),
+    });
+
+    await expect(buscarListaBrapi(buscar, AGORA)).rejects.toMatchObject({ situacao: 'bloqueada' });
+  });
+
   it('acusa formato alterado quando a resposta não é JSON', async () => {
     const { buscar } = criarFetchFalso({
       [URL_LISTA_BRAPI]: new Response('<html>manutenção</html>'),
