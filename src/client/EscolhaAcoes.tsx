@@ -3,11 +3,13 @@ import { LIMITE_ACOES_SELECIONADAS, type AcaoCatalogo } from '../shared/selecao'
 import type { Ticker } from '../shared/ticker';
 import { buscarCatalogo, buscarSelecao, ErroApi, salvarSelecao } from './api';
 import { alternarAcao, montarListaEscolha, selecaoFinal } from './escolha';
+import { comTempoLimite, useCarga } from './useCarga';
 
 interface PropsEscolha {
   aoFechar: () => void;
   /** Chamado depois que o servidor confirmou a nova seleção. */
   aoSalvar: () => void;
+  tempoLimiteMs?: number;
 }
 
 /**
@@ -15,8 +17,6 @@ interface PropsEscolha {
  * algo travou e o painel oferece "Tentar de novo" em vez de carregar para sempre.
  */
 export const TEMPO_LIMITE_ESCOLHA_MS = 20 * 1000;
-
-type Carga<T> = { situacao: 'carregando' } | { situacao: 'ok'; dados: T } | { situacao: 'erro' };
 
 const iguais = (a: readonly Ticker[], b: readonly Ticker[]) =>
   a.length === b.length && a.every((ticker, i) => ticker === b[i]);
@@ -29,55 +29,6 @@ async function buscarCatalogoPreenchido(signal: AbortSignal): Promise<AcaoCatalo
   const acoes = await buscarCatalogo(signal);
   if (acoes.length === 0) throw new ErroApi('Catálogo vazio');
   return acoes;
-}
-
-/** Roda `tarefa` com um sinal que é cancelado por `controle` ou ao passar o tempo limite. */
-async function comTempoLimite<T>(
-  tarefa: (signal: AbortSignal) => Promise<T>,
-  controle: AbortController,
-  tempoLimiteMs: number,
-): Promise<T> {
-  const limite = setTimeout(() => controle.abort(), tempoLimiteMs);
-  try {
-    return await tarefa(controle.signal);
-  } finally {
-    clearTimeout(limite);
-  }
-}
-
-/**
- * Carrega os dados de uma busca ao servidor local; repete quando `tentativa` muda.
- * Um resultado que já carregou não é buscado de novo.
- */
-function useCarga<T>(
-  buscar: (signal: AbortSignal) => Promise<T>,
-  tentativa: number,
-  tempoLimiteMs: number,
-): [Carga<T>, () => void] {
-  const [carga, setCarga] = useState<Carga<T>>({ situacao: 'carregando' });
-  const carregou = carga.situacao === 'ok';
-
-  useEffect(() => {
-    if (carregou) return;
-    let ativo = true;
-    const controle = new AbortController();
-    comTempoLimite(buscar, controle, tempoLimiteMs).then(
-      (dados) => {
-        if (ativo) setCarga({ situacao: 'ok', dados });
-      },
-      () => {
-        if (ativo) setCarga({ situacao: 'erro' });
-      },
-    );
-    return () => {
-      ativo = false;
-      controle.abort();
-    };
-  }, [buscar, tentativa, carregou, tempoLimiteMs]);
-
-  const reiniciar = () =>
-    setCarga((atual) => (atual.situacao === 'erro' ? { situacao: 'carregando' } : atual));
-  return [carga, reiniciar];
 }
 
 /** Mantém o Tab dentro do painel: do último elemento volta ao primeiro, e vice-versa. */
@@ -97,10 +48,6 @@ function prenderFoco(evento: KeyboardEvent<HTMLElement>): void {
   }
 }
 
-interface PropsPainel extends PropsEscolha {
-  tempoLimiteMs?: number;
-}
-
 /**
  * Painel para escolher as ações da grade. As marcações são um rascunho até "Salvar":
  * cada clique não dispara uma busca de cotações.
@@ -109,14 +56,9 @@ export function EscolhaAcoes({
   aoFechar,
   aoSalvar,
   tempoLimiteMs = TEMPO_LIMITE_ESCOLHA_MS,
-}: PropsPainel) {
-  const [tentativa, setTentativa] = useState(0);
-  const [salvas, reiniciarSalvas] = useCarga(buscarSelecao, tentativa, tempoLimiteMs);
-  const [catalogo, reiniciarCatalogo] = useCarga(
-    buscarCatalogoPreenchido,
-    tentativa,
-    tempoLimiteMs,
-  );
+}: PropsEscolha) {
+  const [salvas, recarregarSalvas] = useCarga(buscarSelecao, tempoLimiteMs);
+  const [catalogo, recarregarCatalogo] = useCarga(buscarCatalogoPreenchido, tempoLimiteMs);
   /** Rascunho; null até a primeira marcação (vale a seleção salva). */
   const [rascunho, setRascunho] = useState<Ticker[] | null>(null);
   const [busca, setBusca] = useState('');
@@ -145,9 +87,8 @@ export function EscolhaAcoes({
   const aSalvar = tickersSalvos && selecaoFinal(tickersSalvos, marcadas);
 
   function tentarDeNovo(): void {
-    reiniciarSalvas();
-    reiniciarCatalogo();
-    setTentativa((n) => n + 1);
+    recarregarSalvas();
+    recarregarCatalogo();
   }
 
   function alternar(ticker: Ticker): void {
