@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatarHorario } from '../shared/datas';
+import { formatarHorario, hojeEmBrasilia } from '../shared/datas';
 import { formatarPercentual } from '../shared/posicao';
 import { LIMITE_ACOES_SELECIONADAS } from '../shared/selecao';
 import type { Ticker } from '../shared/ticker';
@@ -49,6 +49,7 @@ function VariacaoDoDia({ centesimos }: { centesimos: number }) {
   const seta = { alta: '▲ ', baixa: '▼ ', neutra: '' }[direcao];
   return (
     <span className={`escolha-variacao variacao-${direcao}`}>
+      <span className="so-leitor">variação do dia </span>
       <span aria-hidden="true">{seta}</span>
       {formatarPercentual(centesimos)}
     </span>
@@ -94,11 +95,19 @@ export function EscolhaAcoes({
     [compras],
   );
   const setores = useMemo(() => contarSetores(acoesDoCatalogo ?? []), [acoesDoCatalogo]);
+  /** A variação só é "de hoje" se a lista da brapi for de hoje (no fim de semana não é). */
+  const listaDeHoje = listaDe !== null && hojeEmBrasilia(new Date(listaDe)) === hojeEmBrasilia();
+  const quando = listaDeHoje ? 'hoje' : 'na última lista';
+  /**
+   * "Que comprei" escolhido sem as compras carregadas. A opção fica desabilitada até elas
+   * chegarem e uma recarga mantém os dados; isto só evita mostrar uma lista vazia enganosa.
+   */
+  const esperandoCompras = modo === 'compradas' && !compradas;
   const marcadas = rascunho ?? tickersSalvos ?? [];
   // Enquanto o catálogo não chega, as salvas já aparecem (só com o código).
   const itens = useMemo(
     () =>
-      tickersSalvos
+      tickersSalvos && !esperandoCompras
         ? montarListaEscolha(acoesDoCatalogo ?? [], tickersSalvos, {
             busca,
             setor: setor || null,
@@ -106,7 +115,7 @@ export function EscolhaAcoes({
             compradas: compradas ?? undefined,
           })
         : [],
-    [acoesDoCatalogo, tickersSalvos, busca, setor, modo, compradas],
+    [acoesDoCatalogo, tickersSalvos, busca, setor, modo, compradas, esperandoCompras],
   );
   const aSalvar = tickersSalvos && selecaoFinal(tickersSalvos, marcadas);
 
@@ -153,14 +162,18 @@ export function EscolhaAcoes({
   const houveMudanca =
     aSalvar !== null && tickersSalvos !== null && !iguais(aSalvar, tickersSalvos);
 
-  let aviso: string | null = null;
-  if (salvas.situacao === 'erro') aviso = 'Não foi possível carregar as ações selecionadas.';
+  const avisos: string[] = [];
+  if (salvas.situacao === 'erro') avisos.push('Não foi possível carregar as ações selecionadas.');
   else if (catalogo.situacao === 'erro') {
-    aviso =
+    avisos.push(
       'Não foi possível carregar a lista de ações da B3; por enquanto só as selecionadas aparecem. ' +
-      'A lista é baixada da brapi no máximo a cada 15 minutos: se a falha continuar, tente mais tarde.';
-  } else if (compras.situacao === 'erro') {
-    aviso = 'Não foi possível carregar suas compras; o filtro “Que comprei” fica indisponível.';
+        'A lista é baixada da brapi no máximo a cada 15 minutos: se a falha continuar, tente mais tarde.',
+    );
+  }
+  if (compras.situacao === 'erro') {
+    avisos.push(
+      'Não foi possível carregar suas compras; o filtro “Que comprei” fica indisponível.',
+    );
   }
 
   let lista;
@@ -168,6 +181,8 @@ export function EscolhaAcoes({
     lista = <p role="status">Carregando ações…</p>;
   } else if (!tickersSalvos) {
     lista = null;
+  } else if (esperandoCompras && compras.situacao === 'carregando') {
+    lista = <p role="status">Carregando suas compras…</p>;
   } else if (itens.length === 0) {
     lista =
       catalogo.situacao === 'carregando' ? null : (
@@ -250,19 +265,24 @@ export function EscolhaAcoes({
             onChange={(evento) => setModo(evento.target.value as ModoEscolha)}
           >
             <option value="todas">Todas</option>
-            <option value="alta">Em alta hoje</option>
-            <option value="baixa">Em baixa hoje</option>
+            <option value="alta">Em alta {quando}</option>
+            <option value="baixa">Em baixa {quando}</option>
             <option value="compradas" disabled={!compradas}>
-              Que comprei
+              {compradas
+                ? 'Que comprei'
+                : compras.situacao === 'erro'
+                  ? 'Que comprei (indisponível)'
+                  : 'Que comprei (carregando…)'}
             </option>
           </select>
         </label>
       </div>
 
       {tickersSalvos && (
-        <p className="escolha-nota">
+        <p className="escolha-nota" aria-live="polite">
           Mostrando {itens.length} {itens.length === 1 ? 'ação' : 'ações'}.
           {listaDe && ` Variação do dia segundo a brapi (lista de ${formatarHorario(listaDe)}).`}
+          {listaDe && !listaDeHoje && ' A lista não é de hoje: a variação pode ser de outro dia.'}
         </p>
       )}
 
@@ -273,9 +293,9 @@ export function EscolhaAcoes({
         </p>
       )}
 
-      {aviso && (
+      {avisos.length > 0 && (
         <div role="alert" className="erro painel-aviso">
-          {aviso}{' '}
+          {avisos.join(' ')}{' '}
           <button type="button" onClick={tentarDeNovo}>
             Tentar de novo
           </button>

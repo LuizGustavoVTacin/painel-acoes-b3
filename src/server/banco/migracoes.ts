@@ -12,7 +12,7 @@ const AGORA_ISO = `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
  * Todas rodam dentro de uma transação, onde PRAGMA foreign_keys não tem efeito:
  * uma migração que reconstrua tabelas com chaves estrangeiras precisa tratar disso.
  */
-const MIGRACOES: readonly string[] = [
+export const MIGRACOES: readonly string[] = [
   `
   CREATE TABLE transacoes (
     id INTEGER PRIMARY KEY,
@@ -103,6 +103,23 @@ const MIGRACOES: readonly string[] = [
   CREATE TABLE catalogo_lista (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     completa_em TEXT NOT NULL
+  ) STRICT;
+  `,
+  `
+  -- O horário de parede pode voltar (relógio do Windows acertado): ações vistas e listas
+  -- completas passam a ser marcadas por um número de lista que só cresce.
+  DROP TABLE catalogo_lista;
+
+  -- Número da lista da brapi em que a ação apareceu pela última vez (0 = antes desta versão).
+  ALTER TABLE catalogo ADD COLUMN geracao INTEGER NOT NULL DEFAULT 0;
+
+  -- Uma única linha: número da última lista salva e da última lista de tamanho normal.
+  -- Ações com geracao menor que "completa" saíram da bolsa e não são oferecidas no menu.
+  CREATE TABLE catalogo_geracao (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    geracao INTEGER NOT NULL CHECK (geracao > 0),
+    completa INTEGER NOT NULL CHECK (completa BETWEEN 0 AND geracao),
+    completa_em TEXT
   ) STRICT;
   `,
 ];

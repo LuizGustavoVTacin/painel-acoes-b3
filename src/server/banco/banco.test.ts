@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { abrirBanco, fecharBanco, type Banco } from './conexao.js';
 import { emTransacao } from './emTransacao.js';
 import { LIMITE_ACOES_SELECIONADAS } from '../../shared/selecao.js';
-import { aplicarMigracoes, VERSAO_ATUAL } from './migracoes.js';
+import { aplicarMigracoes, MIGRACOES, VERSAO_ATUAL } from './migracoes.js';
 import { criarRepositorioSelecao } from './selecao.js';
 import { criarRepositorioTransacoes, type DadosTransacao } from './transacoes.js';
 import { criarRepositorioUsoApi } from './usoApi.js';
@@ -63,7 +63,7 @@ describe('migrações', () => {
     expect(tabelas).toEqual([
       'acoes_selecionadas',
       'catalogo',
-      'catalogo_lista',
+      'catalogo_geracao',
       'cotacoes',
       'estado_api',
       'logos',
@@ -144,6 +144,21 @@ describe('migrações', () => {
     const tabelas = banco.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all();
     expect(tabelas).toEqual([{ name: 't' }]);
     expect(banco.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 });
+    banco.close();
+  });
+
+  it('banco da versão 3 com catálogo: as ações antigas continuam listadas até a próxima lista', () => {
+    const banco = new DatabaseSync(':memory:');
+    aplicarMigracoes(banco, MIGRACOES.slice(0, 3));
+    banco.exec(`INSERT INTO catalogo (ticker, nome, preco_centavos, atualizado_em)
+      VALUES ('BBAS3', 'BB', 1738, '2026-10-27T15:00:00.000Z')`);
+
+    aplicarMigracoes(banco);
+
+    expect(
+      banco.prepare('SELECT ticker, setor, variacao_centesimos, geracao FROM catalogo').all(),
+    ).toEqual([{ ticker: 'BBAS3', setor: null, variacao_centesimos: null, geracao: 0 }]);
+    expect(banco.prepare('SELECT * FROM catalogo_geracao').all()).toEqual([]);
     banco.close();
   });
 

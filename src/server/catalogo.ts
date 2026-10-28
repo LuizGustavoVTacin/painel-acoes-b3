@@ -20,12 +20,21 @@ export const ESPERA_APOS_FALHA_DE_LOGO_MS = 15 * 60 * 1000;
 const DOWNLOADS_SIMULTANEOS = 4;
 const LIMITE_LOGO_BYTES = 200 * 1024;
 const TIPOS_DE_LOGO = new Set(['image/svg+xml', 'image/png']);
-/** Uma lista com menos da metade das ações já conhecidas indica corte ou mudança na API. */
-const FRACAO_MINIMA_DA_LISTA = 0.5;
+/**
+ * Saídas da bolsa são poucas por dia: uma lista com menos de 90% das ações listadas indica corte
+ * ou mudança na API. Ela é guardada (com aviso), mas não esconde nenhuma ação.
+ */
+const FRACAO_MINIMA_DA_LISTA = 0.9;
 const listaEncolheu = (gravados: number, conhecidas: number) =>
   gravados < conhecidas * FRACAO_MINIMA_DA_LISTA;
 /** Ações vistas na última lista completa (ou todas, se ainda não houve uma). */
-const SOMENTE_LISTADAS = `atualizado_em >= coalesce((SELECT completa_em FROM catalogo_lista), '')`;
+const SOMENTE_LISTADAS = `geracao >= coalesce((SELECT completa FROM catalogo_geracao), 0)`;
+
+interface Geracao {
+  geracao: number;
+  completa: number;
+  completa_em: string | null;
+}
 const FALHAS_DE_FORMATO_PARA_ALERTA = 5;
 const AVISO_FALHA_LOCAL = 'A brapi respondeu, mas o banco local não salvou os dados';
 const AVISO_DE_COBRANCA = `${MENSAGEM_COBRANCA} (aviso recebido junto com os dados)`;
@@ -89,15 +98,22 @@ export type ServicoCatalogo = ReturnType<typeof criarServicoCatalogo>;
 export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: DependenciasCatalogo) {
   const gravarItem = banco.prepare(
     `INSERT INTO catalogo
-       (ticker, nome, logo_url, preco_centavos, setor, variacao_centesimos, atualizado_em)
-     VALUES (:ticker, :nome, :logoUrl, :precoCentavos, :setor, :variacaoDoDia, :agora)
+       (ticker, nome, logo_url, preco_centavos, setor, variacao_centesimos, geracao, atualizado_em)
+     VALUES (:ticker, :nome, :logoUrl, :precoCentavos, :setor, :variacaoDoDia, :geracao, :agora)
      ON CONFLICT (ticker) DO UPDATE SET nome = excluded.nome, logo_url = excluded.logo_url,
        preco_centavos = excluded.preco_centavos, setor = excluded.setor,
-       variacao_centesimos = excluded.variacao_centesimos, atualizado_em = excluded.atualizado_em`,
+       variacao_centesimos = excluded.variacao_centesimos, geracao = excluded.geracao,
+       atualizado_em = excluded.atualizado_em`,
   );
-  const marcarListaCompleta = banco.prepare(
-    `INSERT INTO catalogo_lista (id, completa_em) VALUES (1, ?)
-     ON CONFLICT (id) DO UPDATE SET completa_em = excluded.completa_em`,
+  const marcarVista = banco.prepare('UPDATE catalogo SET geracao = ? WHERE ticker = ?');
+  const lerGeracao = banco.prepare(
+    'SELECT geracao, completa, completa_em FROM catalogo_geracao WHERE id = 1',
+  );
+  const gravarGeracao = banco.prepare(
+    `INSERT INTO catalogo_geracao (id, geracao, completa, completa_em)
+     VALUES (1, :geracao, :completa, :completaEm)
+     ON CONFLICT (id) DO UPDATE SET geracao = excluded.geracao, completa = excluded.completa,
+       completa_em = excluded.completa_em`,
   );
   const contarItens = banco.prepare('SELECT count(*) AS total FROM catalogo');
   const contarListadas = banco.prepare(
@@ -107,7 +123,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
     `SELECT ticker, nome, setor, variacao_centesimos AS variacaoDoDia FROM catalogo
      WHERE ${SOMENTE_LISTADAS} ORDER BY ticker`,
   );
-  const buscarUltimaLista = banco.prepare('SELECT max(atualizado_em) AS momento FROM catalogo');
+
   const buscarPreco = banco.prepare(
     'SELECT preco_centavos, atualizado_em FROM catalogo WHERE ticker = ? AND preco_centavos IS NOT NULL',
   );
@@ -134,21 +150,31 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
   /**
    * Grava os itens um a um: um item recusado por uma regra do banco não impede os demais.
    * Outros erros (disco cheio, banco travado) desfazem a transação e são lançados.
-   * Uma lista de tamanho normal passa a valer como a lista atual da B3.
+   * Cada lista recebe um número novo; uma de tamanho normal passa a valer como a lista atual da
+   * B3, e as ações que não vieram nela deixam de ser listadas.
    */
   function salvarItens(itens: { ticker: Ticker }[], momento: Date, conhecidas: number): number {
     let gravados = 0;
     emTransacao(banco, () => {
+      const anterior = lerGeracao.get() as Geracao | undefined;
+      const geracao = (anterior?.geracao ?? 0) + 1;
       for (const item of itens) {
         try {
-          gravarItem.run({ ...item, agora: momento.toISOString() });
+          gravarItem.run({ ...item, geracao, agora: momento.toISOString() });
           gravados++;
         } catch (erro) {
           if (!ehViolacaoDeRegra(erro)) throw erro;
           console.warn(`Ação ${item.ticker} ignorada no catálogo:`, (erro as Error).message);
+          // Veio na lista: continua listada, com os dados antigos.
+          marcarVista.run(geracao, item.ticker);
         }
       }
-      if (!listaEncolheu(gravados, conhecidas)) marcarListaCompleta.run(momento.toISOString());
+      const completa = !listaEncolheu(gravados, conhecidas);
+      gravarGeracao.run({
+        geracao,
+        completa: completa ? geracao : (anterior?.completa ?? 0),
+        completaEm: completa ? momento.toISOString() : (anterior?.completa_em ?? null),
+      });
     });
     return gravados;
   }
@@ -279,9 +305,9 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
       return filtrarAcoes(listarItens.all() as unknown as AcaoListada[], busca);
     },
 
-    /** Quando a lista da brapi foi salva pela última vez; null se nunca foi. */
+    /** Quando chegou a última lista completa da brapi (a da variação do dia); null se nunca. */
     atualizadoEm(): string | null {
-      return (buscarUltimaLista.get() as { momento: string | null }).momento;
+      return (lerGeracao.get() as Geracao | undefined)?.completa_em ?? null;
     },
 
     /** Último preço da brapi para cada ticker que tiver preço no catálogo. */

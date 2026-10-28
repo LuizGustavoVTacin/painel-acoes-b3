@@ -529,61 +529,115 @@ describe('robustez (pontos da revisão)', () => {
     expect(catalogo.precos(['PETR4']).get('PETR4')?.precoCentavos).toBe(1700);
   });
 
-  it('ação que volta à lista volta a aparecer', async () => {
-    const acao = (stock: string) => ({ stock, name: stock, close: 17 });
-    const sem = json({ stocks: [acao('BBAS3'), acao('ITUB4')] });
-    const com = json({ stocks: [acao('BBAS3'), acao('ITUB4'), acao('PETR4')] });
-    const { catalogo } = montar({ [URL_LISTA_BRAPI]: [com, sem, com] });
-    await catalogo.garantirAtualizado();
-    avancar(15 * MINUTO);
-    await catalogo.garantirAtualizado();
-    expect(catalogo.listar()).toHaveLength(2);
-    avancar(15 * MINUTO);
+  describe('ações que saíram da bolsa', () => {
+    const DEZ = [
+      'AAAA3',
+      'BBBB3',
+      'CCCC3',
+      'DDDD3',
+      'EEEE3',
+      'FFFF3',
+      'GGGG3',
+      'HHHH3',
+      'IIII3',
+      'JJJJ3',
+    ];
+    const lista = (tickers: string[]) =>
+      json({ stocks: tickers.map((stock) => ({ stock, name: stock, close: 17 })) });
+    /** Busca as listas em sequência, 15 minutos uma depois da outra. */
+    async function buscarListas(catalogo: ReturnType<typeof montar>['catalogo'], vezes: number) {
+      for (let i = 0; i < vezes; i++) {
+        if (i > 0) avancar(15 * MINUTO);
+        await catalogo.garantirAtualizado();
+      }
+    }
 
-    await catalogo.garantirAtualizado();
+    it('ação que volta à lista volta a aparecer', async () => {
+      const semJ = DEZ.slice(0, 9);
+      const { catalogo } = montar({ [URL_LISTA_BRAPI]: [lista(DEZ), lista(semJ), lista(DEZ)] });
 
-    expect(catalogo.listar().map((a) => a.ticker)).toEqual(['BBAS3', 'ITUB4', 'PETR4']);
-  });
+      await buscarListas(catalogo, 2);
+      expect(catalogo.listar().map((a) => a.ticker)).toEqual(semJ);
 
-  it('lista que encolheu demais não esconde nada, nem nas listas seguintes', async () => {
-    const acao = (stock: string) => ({ stock, name: stock, close: 17 });
-    const completa = json({ stocks: ['BBAS3', 'ITUB4', 'PETR4', 'VALE3'].map(acao) });
-    const pequena = json({ stocks: [acao('BBAS3')] });
-    // Depois da falha, uma lista normal com três das quatro: só a ausente some.
-    const normal = json({ stocks: ['BBAS3', 'ITUB4', 'PETR4'].map(acao) });
-    const { catalogo } = montar({ [URL_LISTA_BRAPI]: [completa, pequena, normal] });
-    await catalogo.garantirAtualizado();
-    avancar(15 * MINUTO);
-
-    await catalogo.garantirAtualizado();
-    expect(catalogo.listar()).toHaveLength(4);
-
-    avancar(15 * MINUTO);
-    await catalogo.garantirAtualizado();
-    expect(catalogo.listar().map((a) => a.ticker)).toEqual(['BBAS3', 'ITUB4', 'PETR4']);
-  });
-
-  it('o tamanho normal é medido pelas ações listadas, não pelas que já saíram', async () => {
-    const acao = (stock: string) => ({ stock, name: stock, close: 17 });
-    const lista = (...tickers: string[]) => json({ stocks: tickers.map(acao) });
-    const { catalogo, estado } = montar({
-      [URL_LISTA_BRAPI]: [
-        lista('AAAA3', 'BBBB3', 'CCCC3', 'DDDD3'),
-        lista('AAAA3', 'BBBB3'),
-        lista('AAAA3', 'BBBB3'),
-      ],
+      avancar(15 * MINUTO);
+      await catalogo.garantirAtualizado();
+      expect(catalogo.listar()).toHaveLength(10);
     });
-    await catalogo.garantirAtualizado();
-    avancar(15 * MINUTO);
-    // 2 de 4 é exatamente a metade: lista normal, CCCC3 e DDDD3 saem.
-    await catalogo.garantirAtualizado();
-    expect(catalogo.listar()).toHaveLength(2);
-    avancar(15 * MINUTO);
 
-    await catalogo.garantirAtualizado();
+    it('lista com menos de 90% das ações avisa e não esconde nada', async () => {
+      const { catalogo, estado } = montar({
+        [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ.slice(0, 8))],
+      });
 
-    // Agora 2 de 2: sem aviso de lista pequena, embora o banco guarde 4.
-    expect(estado.consultar('brapi')?.mensagem).toBeNull();
+      await buscarListas(catalogo, 2);
+
+      expect(catalogo.listar()).toHaveLength(10);
+      expect(estado.consultar('brapi')?.mensagem).toBe(
+        'A brapi devolveu menos ações que o normal (8 de 10)',
+      );
+    });
+
+    it('cortes seguidos na lista não escondem ações aos poucos', async () => {
+      const { catalogo, estado } = montar({
+        [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ.slice(0, 6)), lista(DEZ.slice(0, 4))],
+      });
+
+      await buscarListas(catalogo, 3);
+
+      // A régua continua sendo as 10 listadas, não as 6 da lista anterior.
+      expect(catalogo.listar()).toHaveLength(10);
+      expect(estado.consultar('brapi')?.mensagem).toBe(
+        'A brapi devolveu menos ações que o normal (4 de 10)',
+      );
+    });
+
+    it('depois de uma lista cortada, a próxima normal esconde só as ausentes', async () => {
+      const { catalogo } = montar({
+        [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ.slice(0, 3)), lista(DEZ.slice(1))],
+      });
+
+      await buscarListas(catalogo, 3);
+
+      expect(catalogo.listar().map((a) => a.ticker)).toEqual(DEZ.slice(1));
+    });
+
+    it('o relógio voltando não esconde ações que vieram na lista', async () => {
+      const { catalogo } = montar({
+        [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ.slice(0, 9)), lista(DEZ)],
+      });
+      await catalogo.garantirAtualizado();
+      avancar(-3 * HORA);
+      await catalogo.garantirAtualizado();
+      expect(catalogo.listar()).toHaveLength(9);
+
+      avancar(-3 * HORA);
+      await catalogo.garantirAtualizado();
+
+      expect(catalogo.listar()).toHaveLength(10);
+    });
+
+    it('ação recusada pelo banco continua listada se veio na lista', async () => {
+      const { catalogo } = montar({ [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ)] });
+      await catalogo.garantirAtualizado();
+      banco.exec(`CREATE TEMP TRIGGER recusa_jjjj BEFORE INSERT ON catalogo
+        WHEN NEW.ticker = 'JJJJ3' BEGIN SELECT RAISE(ABORT, 'recusado'); END`);
+      avancar(15 * MINUTO);
+
+      await catalogo.garantirAtualizado();
+
+      expect(catalogo.listar()).toHaveLength(10);
+    });
+
+    it('o horário informado é o da última lista completa', async () => {
+      const inicio = agora.toISOString();
+      const { catalogo } = montar({
+        [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ.slice(0, 2))],
+      });
+
+      await buscarListas(catalogo, 2);
+
+      expect(catalogo.atualizadoEm()).toBe(inicio);
+    });
   });
 
   it('relógio atrasado não trava as chamadas', async () => {

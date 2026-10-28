@@ -540,8 +540,7 @@ describe('EscolhaAcoes: filtros', () => {
     simularServidor();
     await abrir();
 
-    const opcao = within(mostrar()).getByRole('option', { name: 'Que comprei' });
-    await waitFor(() => expect(opcao).toBeEnabled());
+    expect(await within(mostrar()).findByRole('option', { name: 'Que comprei' })).toBeEnabled();
     fireEvent.change(mostrar(), { target: { value: 'compradas' } });
 
     expect(linhas()).toEqual(['ITUB4', 'ELET3']);
@@ -552,7 +551,9 @@ describe('EscolhaAcoes: filtros', () => {
     simularServidor({ transacoes: () => new Response('erro', { status: 500 }) });
     await abrir();
 
-    expect(within(mostrar()).getByRole('option', { name: 'Que comprei' })).toBeDisabled();
+    expect(
+      await within(mostrar()).findByRole('option', { name: 'Que comprei (indisponível)' }),
+    ).toBeDisabled();
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Não foi possível carregar suas compras',
     );
@@ -569,5 +570,56 @@ describe('EscolhaAcoes: filtros', () => {
 
     expect(caixa('ITUB4')).toBeChecked();
     expect(screen.getByText('2 de 50 selecionadas')).toBeInTheDocument();
+  });
+});
+
+describe('EscolhaAcoes: data da lista e recargas', () => {
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  const mostrar = () => screen.getByRole('combobox', { name: 'Mostrar' });
+  const opcoes = () =>
+    within(mostrar())
+      .getAllByRole('option')
+      .map((o) => o.textContent);
+
+  async function abrir() {
+    render(<MenuPrincipal aoSalvarSelecao={() => {}} />);
+    await abrirEscolha();
+    await screen.findByText(/Variação do dia segundo a brapi/);
+  }
+
+  it('lista de hoje: "Em alta hoje", sem aviso de data', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-28T20:00:00Z'));
+    simularServidor();
+    await abrir();
+
+    expect(opcoes()).toContain('Em alta hoje');
+    expect(screen.queryByText(/não é de hoje/)).not.toBeInTheDocument();
+  });
+
+  it('lista de outro dia: os filtros perdem o "hoje" e a nota avisa', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-31T15:00:00Z'));
+    simularServidor();
+    await abrir();
+
+    expect(opcoes()).toEqual(
+      expect.arrayContaining(['Em alta na última lista', 'Em baixa na última lista']),
+    );
+    expect(screen.getByText(/A lista não é de hoje/)).toBeInTheDocument();
+  });
+
+  it('"Que comprei" sem as compras carregadas mostra que estão carregando, não lista vazia', async () => {
+    simularServidor({ transacoes: nuncaResponde });
+    await abrir();
+
+    fireEvent.change(mostrar(), { target: { value: 'compradas' } });
+
+    expect(screen.getByText('Carregando suas compras…')).toBeInTheDocument();
+    expect(screen.queryByText(/Nenhuma ação encontrada/)).not.toBeInTheDocument();
   });
 });

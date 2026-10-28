@@ -40,9 +40,6 @@ export function paraCentesimos(valor: number): number {
 
 /** Converte reais (ex.: preço vindo de uma API) em centavos. */
 export function reaisParaCentavos(reais: number): Centavos {
-  if (!Number.isFinite(reais) || Math.abs(reais) >= LIMITE_REAIS) {
-    throw new RangeError(`Valor em reais inválido: ${reais}`);
-  }
   return garantirCentavos(paraCentesimos(reais));
 }
 
