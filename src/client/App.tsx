@@ -1,6 +1,6 @@
 import { formatarHorario } from '../shared/datas';
 import { textoMercado, ultimaAtualizacao } from './apresentacao';
-import { QuadradoAcao } from './QuadradoAcao';
+import { GradeAcoes } from './GradeAcoes';
 import { Rodape } from './Rodape';
 import { useCotacoes } from './useCotacoes';
 
@@ -21,13 +21,7 @@ export function App({ tempoLimiteMs }: PropsApp) {
       </p>
     );
   } else if (dados) {
-    conteudo = (
-      <ul className="grade" aria-label="Ações acompanhadas">
-        {dados.cotacoes.map((cotacao) => (
-          <QuadradoAcao key={cotacao.ticker} cotacao={cotacao} rodada={recebimentos} />
-        ))}
-      </ul>
-    );
+    conteudo = <GradeAcoes cotacoes={dados.cotacoes} rodada={recebimentos} />;
   } else if (carregando) {
     conteudo = <p role="status">Carregando cotações…</p>;
   }

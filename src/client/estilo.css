@@ -10,6 +10,9 @@
   --atencao: #7a5200;
   --atencao-fundo: #fdf3dc;
   --sombra: 0 1px 2px rgb(0 0 0 / 6%);
+  --destaque: #c2571a;
+  --destaque-suave: #fbeee5;
+  --sombra-ativo: 0 6px 18px rgb(0 0 0 / 12%);
   color-scheme: light;
   font-family:
     system-ui,
@@ -33,6 +36,9 @@
     --atencao: #e9bd5b;
     --atencao-fundo: #382e1a;
     --sombra: none;
+    --destaque: #e8844a;
+    --destaque-suave: #3a2a1f;
+    --sombra-ativo: 0 6px 18px rgb(0 0 0 / 45%);
     color-scheme: dark;
   }
 }
@@ -146,6 +152,38 @@ body {
 
 .preco {
   font-variant-numeric: tabular-nums;
+}
+
+/* Destaque: forte no quadrado ativo, suave nos 4 vizinhos. */
+.quadrado {
+  cursor: default;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.quadrado:focus-visible {
+  outline: 2px solid var(--destaque);
+  outline-offset: 3px;
+}
+
+.quadrado-ativo {
+  border-color: var(--destaque);
+  box-shadow:
+    0 0 0 2px var(--destaque),
+    var(--sombra-ativo);
+}
+
+.quadrado-vizinho {
+  border-color: color-mix(in srgb, var(--destaque) 45%, var(--borda));
+  background: var(--destaque-suave);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quadrado {
+    transition: none;
+  }
 }
 
 .quadrado-desatualizado .preco {
