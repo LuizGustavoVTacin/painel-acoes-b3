@@ -4,6 +4,7 @@ import { intervaloDeAtualizacao, marcosDoPregao, situacaoDoPregao, type Pregao }
 // Terça, 27/10/2026: pregão das 10h às 17h em Brasília (13h às 20h UTC).
 const PREGAO: Pregao = { inicio: '2026-10-27T13:00:00.000Z', fim: '2026-10-27T20:00:00.000Z' };
 const em = (iso: string) => new Date(iso);
+const MINUTO = 60_000;
 
 describe('situacaoDoPregao', () => {
   it.each([
@@ -14,10 +15,12 @@ describe('situacaoDoPregao', () => {
     ['29 min após o fim', '2026-10-27T20:29:59Z', 'leilao'],
     ['30 min após o fim', '2026-10-27T20:30:00Z', 'fechado'],
     ['de madrugada', '2026-10-28T05:00:00Z', 'fechado'],
-    ['dia útil seguinte, antes de abrir', '2026-10-28T12:59:00Z', 'fechado'],
-    ['dia útil seguinte, sem pregão confirmado', '2026-10-28T13:00:00Z', 'desconhecido'],
-    ['dia útil seguinte, no leilão projetado', '2026-10-28T20:10:00Z', 'desconhecido'],
-    ['dia útil seguinte, à noite', '2026-10-28T21:00:00Z', 'fechado'],
+    ['dia seguinte, mais de 1 h antes de abrir', '2026-10-28T11:59:00Z', 'fechado'],
+    ['dia seguinte, 1 h antes de abrir (folga)', '2026-10-28T12:00:00Z', 'desconhecido'],
+    ['dia seguinte, sem pregão confirmado', '2026-10-28T13:00:00Z', 'desconhecido'],
+    ['dia seguinte, no leilão projetado', '2026-10-28T20:10:00Z', 'desconhecido'],
+    ['dia seguinte, à noite', '2026-10-28T21:00:00Z', 'fechado'],
+    ['feriado de quinta, com o pregão de terça guardado', '2026-10-29T15:00:00Z', 'desconhecido'],
     ['sábado no horário de pregão', '2026-10-31T15:00:00Z', 'fechado'],
     ['domingo no horário de pregão', '2026-11-01T15:00:00Z', 'fechado'],
     ['segunda após o fim de semana', '2026-11-02T15:00:00Z', 'desconhecido'],
@@ -25,17 +28,35 @@ describe('situacaoDoPregao', () => {
     expect(situacaoDoPregao(PREGAO, em(instante))).toBe(esperado);
   });
 
-  it('sem pregão conhecido, a situação é desconhecida', () => {
-    expect(situacaoDoPregao(undefined, em('2026-10-27T15:00:00Z'))).toBe('desconhecido');
+  it('pregão anunciado para amanhã: fechado até abrir, aberto depois', () => {
+    const amanha: Pregao = {
+      inicio: '2026-10-28T13:00:00.000Z',
+      fim: '2026-10-28T20:00:00.000Z',
+    };
+    expect(situacaoDoPregao(amanha, em('2026-10-27T23:00:00Z'))).toBe('fechado');
+    expect(situacaoDoPregao(amanha, em('2026-10-28T13:00:00Z'))).toBe('aberto');
+  });
+
+  it.each([
+    ['dia útil às 12h', '2026-10-27T15:00:00Z', 'aberto'],
+    ['dia útil às 17h10', '2026-10-27T20:10:00Z', 'leilao'],
+    ['dia útil à noite', '2026-10-27T23:00:00Z', 'fechado'],
+    ['sábado às 12h', '2026-10-31T15:00:00Z', 'fechado'],
+  ])('sem pregão do Yahoo, usa o horário habitual da B3: %s', (_caso, instante, esperado) => {
+    expect(situacaoDoPregao(undefined, em(instante))).toBe(esperado);
   });
 });
 
 describe('intervaloDeAtualizacao', () => {
-  it('5 min no pregão e no leilão, 15 min sem confirmação e 1 h fechado', () => {
-    expect(intervaloDeAtualizacao('aberto')).toBe(5 * 60_000);
-    expect(intervaloDeAtualizacao('leilao')).toBe(5 * 60_000);
-    expect(intervaloDeAtualizacao('desconhecido')).toBe(15 * 60_000);
-    expect(intervaloDeAtualizacao('fechado')).toBe(60 * 60_000);
+  it.each([
+    ['pregão aberto', '2026-10-27T17:00:00Z', 5],
+    ['leilão', '2026-10-27T20:10:00Z', 5],
+    ['fechado', '2026-10-27T23:00:00Z', 60],
+    ['dia seguinte, 30 min antes da abertura projetada', '2026-10-28T12:30:00Z', 15],
+    ['dia seguinte, primeiros 30 min após a abertura projetada', '2026-10-28T13:10:00Z', 5],
+    ['dia seguinte, sem confirmação depois disso (feriado)', '2026-10-28T13:30:00Z', 15],
+  ])('%s: %s min', (_caso, instante, minutos) => {
+    expect(intervaloDeAtualizacao(PREGAO, em(instante))).toBe(minutos * MINUTO);
   });
 });
 

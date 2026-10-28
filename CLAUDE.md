@@ -78,7 +78,7 @@ Login, sales, historical charts, real-time quotes, hosting.
   crumb). Selected tickers (`BBAS3.SA`) go in batches of at most 20 (Yahoo's
   limit), so 50 stocks = 3 calls. Only header sent: `User-Agent: Mozilla/5.0`
   (Yahoo answers 429 without it). Session hours come from Yahoo (no holiday
-  calendar). Each stock refreshes at most every 5 minutes from the opening
+  calendar; if Yahoo never reports them, assume 10:00–17:00 on weekdays). Each stock refreshes at most every 5 minutes from the opening
   until 30 minutes after the close (closing auction), every 15 minutes on a
   weekday during session hours while Yahoo has not confirmed that day's
   session, and at most once an hour otherwise; plus one forced refresh after

@@ -39,6 +39,16 @@ export function registrarFalha(
   );
 }
 
+/** Consulta se a API pode ser chamada; se o banco falhar, não chama (sem nunca lançar). */
+export function podeChamar(estado: EstadoFontes, provedor: Provedor, momento: Date): boolean {
+  try {
+    return estado.podeChamar(provedor, momento);
+  } catch (erro) {
+    console.error(`Não foi possível consultar o estado de ${provedor}:`, erro);
+    return false;
+  }
+}
+
 /** Conta uma chamada à API no mês corrente (horário de Brasília), sem nunca lançar. */
 export function contarUso(uso: RepositorioUsoApi, provedor: Provedor, momento: Date): void {
   semFalhar(`contar o uso de ${provedor}`, () =>

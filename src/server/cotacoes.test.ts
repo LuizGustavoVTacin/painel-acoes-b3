@@ -37,10 +37,24 @@ function montar(respostas: Parameters<typeof criarFetchFalso>[0]) {
   const uso = criarRepositorioUsoApi(banco);
   const relogio = () => agora;
   const catalogo = criarServicoCatalogo({ banco, buscar, agora: relogio, estado, uso });
-  const cotacoes = criarServicoCotacoes({ banco, buscar, agora: relogio, estado, uso, catalogo });
+  // A pausa entre rodadas avança o relógio falso em vez de esperar de verdade.
+  const esperas: number[] = [];
+  const esperar = async (ms: number) => {
+    esperas.push(ms);
+    avancar(ms);
+  };
+  const cotacoes = criarServicoCotacoes({
+    banco,
+    buscar,
+    agora: relogio,
+    estado,
+    uso,
+    catalogo,
+    esperar,
+  });
   const doYahoo = () => requisicoes.filter((r) => r.url.startsWith(URL_YAHOO));
   const daBrapi = () => requisicoes.filter((r) => r.url === URL_LISTA_BRAPI);
-  return { cotacoes, estado, uso, doYahoo, daBrapi };
+  return { cotacoes, estado, uso, doYahoo, daBrapi, esperas };
 }
 
 async function atualizarEListar(servico: ReturnType<typeof montar>['cotacoes'], tickers: string[]) {
@@ -81,6 +95,7 @@ describe('cotações pelo Yahoo', () => {
       ],
       mercadoAberto: true,
       fontesEmUso: ['yahoo'],
+      semCotacaoNoYahoo: [],
     });
     expect(estado.consultar('yahoo')).toMatchObject({ situacao: 'ok', mensagem: null });
     expect(uso.consultar('yahoo', '2026-10')).toBe(1);
@@ -166,10 +181,8 @@ describe('reserva pela brapi e falhas', () => {
       ['ELET3', 'brapi', 5000],
     ]);
     expect(painel.fontesEmUso).toEqual(['yahoo', 'brapi']);
-    expect(estado.consultar('yahoo')).toMatchObject({
-      situacao: 'ok',
-      mensagem: 'Sem cotação no Yahoo: ELET3',
-    });
+    expect(painel.semCotacaoNoYahoo).toEqual(['ELET3']);
+    expect(estado.consultar('yahoo')?.situacao).toBe('ok');
   });
 
   it('Yahoo pedindo pagamento: usa só a brapi e não chama o Yahoo por 24 h', async () => {
@@ -376,41 +389,65 @@ describe('robustez das cotações (revisão)', () => {
       [URL_LISTA_BRAPI]: listaBrapi(),
     });
 
-    await cotacoes.atualizar(['SUSP3']);
+    const painel = await atualizarEListar(cotacoes, ['SUSP3']);
 
-    expect(estado.consultar('yahoo')).toMatchObject({
-      situacao: 'ok',
-      mensagem: 'Sem cotação no Yahoo: SUSP3',
-    });
+    expect(painel.semCotacaoNoYahoo).toEqual(['SUSP3']);
+    expect(estado.consultar('yahoo')?.situacao).toBe('ok');
     expect(estado.podeChamar('yahoo', agora)).toBe(true);
   });
 
-  it('o aviso de ação ausente não some quando outra ação é buscada', async () => {
-    const { cotacoes, estado } = montar({
+  it('o aviso de ação ausente fica enquanto ela estiver selecionada, e sai ao desmarcar', async () => {
+    const { cotacoes } = montar({
       [URL_YAHOO]: [spark(itemSpark('BBAS3')), spark(itemSpark('PETR4'))],
       [URL_LISTA_BRAPI]: listaBrapi(),
     });
     await cotacoes.atualizar(['BBAS3', 'ELET3']);
 
     avancar(1 * MINUTO);
-    await cotacoes.atualizar(['BBAS3', 'ELET3', 'PETR4']);
+    const comOutra = await atualizarEListar(cotacoes, ['BBAS3', 'ELET3', 'PETR4']);
 
-    expect(estado.consultar('yahoo')?.mensagem).toBe('Sem cotação no Yahoo: ELET3');
+    expect(comOutra.semCotacaoNoYahoo).toEqual(['ELET3']);
+    expect(cotacoes.listar(['BBAS3', 'PETR4']).semCotacaoNoYahoo).toEqual([]);
   });
 
-  it('pausa de 10 segundos entre rodadas de chamadas ao Yahoo', async () => {
-    const { cotacoes, doYahoo } = montar({
+  it('ação marcada logo após uma rodada espera a pausa de 10 s e é buscada no Yahoo', async () => {
+    const { cotacoes, doYahoo, esperas, daBrapi } = montar({
       [URL_YAHOO]: [spark(itemSpark('BBAS3')), spark(itemSpark('PETR4'))],
       [URL_LISTA_BRAPI]: listaBrapi(),
     });
     await cotacoes.atualizar(['BBAS3']);
 
-    avancar(5000);
-    await cotacoes.atualizar(['BBAS3', 'PETR4']);
-    expect(doYahoo()).toHaveLength(1);
-    avancar(5000);
-    await cotacoes.atualizar(['BBAS3', 'PETR4']);
-    expect(doYahoo()).toHaveLength(2);
+    avancar(3000);
+    const painel = await atualizarEListar(cotacoes, ['BBAS3', 'PETR4']);
+
+    expect(esperas).toEqual([7000]);
+    expect(doYahoo().map((r) => new URL(r.url).searchParams.get('symbols'))).toEqual([
+      'BBAS3.SA',
+      'PETR4.SA',
+    ]);
+    expect(painel.cotacoes.map((c) => c.fonte)).toEqual(['yahoo', 'yahoo']);
+    expect(daBrapi()).toHaveLength(0);
+  });
+
+  it('rodadas de chamadas ao Yahoo nunca se sobrepõem', async () => {
+    let simultaneas = 0;
+    let pico = 0;
+    const lento = async () => {
+      pico = Math.max(pico, ++simultaneas);
+      await new Promise((resolver) => setTimeout(resolver, 10));
+      simultaneas--;
+      return spark(itemSpark('BBAS3'), itemSpark('PETR4'), itemSpark('VALE3'));
+    };
+    const { cotacoes, doYahoo } = montar({ [URL_YAHOO]: lento, [URL_LISTA_BRAPI]: listaBrapi() });
+
+    await Promise.all([
+      cotacoes.atualizar(['BBAS3']),
+      cotacoes.atualizar(['BBAS3', 'PETR4']),
+      cotacoes.atualizar(['VALE3']),
+    ]);
+
+    expect(pico).toBe(1);
+    expect(doYahoo()).toHaveLength(3);
   });
 
   it('bloqueio durante a rodada interrompe os lotes seguintes', async () => {
@@ -534,5 +571,60 @@ describe('concorrência e pregão salvo', () => {
     expect(banco.prepare('SELECT fim FROM pregao').get()).toEqual({
       fim: '2026-10-28T20:00:00.000Z',
     });
+  });
+});
+
+describe('segunda revisão da etapa 4b', () => {
+  it('lote que falha não descarta o pregão lido nos lotes anteriores', async () => {
+    const tickers = Array.from({ length: 25 }, (_, i) => `AB${String(i).padStart(2, '0')}3`);
+    const { cotacoes, estado } = montar({
+      [URL_YAHOO]: [
+        spark(...tickers.slice(0, 20).map((t) => itemSpark(t))),
+        json({}, { status: 503 }),
+      ],
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+
+    const painel = await atualizarEListar(cotacoes, tickers);
+
+    expect(banco.prepare('SELECT fim FROM pregao').get()).toEqual({
+      fim: '2026-10-27T20:00:00.000Z',
+    });
+    expect(painel.mercadoAberto).toBe(true);
+    expect(estado.consultar('yahoo')?.situacao).toBe('instavel');
+  });
+
+  it('erro ao consultar o estado do Yahoo não derruba a reserva', async () => {
+    const { cotacoes, estado } = montar({
+      [URL_YAHOO]: spark(itemSpark('BBAS3')),
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+    const original = estado.podeChamar.bind(estado);
+    vi.spyOn(estado, 'podeChamar').mockImplementation((provedor, momento) => {
+      if (provedor === 'yahoo') throw new Error('database is locked');
+      return original(provedor, momento);
+    });
+
+    const painel = await atualizarEListar(cotacoes, ['BBAS3']);
+
+    expect(painel.cotacoes[0]).toMatchObject({ fonte: 'brapi', precoCentavos: 5000 });
+  });
+
+  it('atualização que passou do tempo limite termina sozinha e vale para o próximo pedido', async () => {
+    const lento = async () => {
+      await new Promise((resolver) => setTimeout(resolver, 50));
+      return spark(itemSpark('BBAS3'));
+    };
+    const { cotacoes, doYahoo } = montar({ [URL_YAHOO]: lento });
+
+    await cotacoes.atualizarComLimite(['BBAS3'], 5);
+    expect(cotacoes.listar(['BBAS3']).cotacoes[0].precoCentavos).toBeNull();
+
+    await cotacoes.atualizarComLimite(['BBAS3'], 1000);
+    expect(cotacoes.listar(['BBAS3']).cotacoes[0]).toMatchObject({
+      fonte: 'yahoo',
+      precoCentavos: 1738,
+    });
+    expect(doYahoo()).toHaveLength(1);
   });
 });

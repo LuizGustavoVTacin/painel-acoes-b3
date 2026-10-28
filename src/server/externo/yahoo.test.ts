@@ -92,6 +92,21 @@ describe('interpretarSpark', () => {
     expect(interpretarSpark({ spark: { result: [item] } }, ['SUSP3'])).toEqual([]);
   });
 
+  it('lote só com uma ação em formato de erro não é mudança de formato', () => {
+    const item = { symbol: 'XXXX3.SA', response: [{ error: { code: 'Not Found' } }] };
+    expect(interpretarSpark({ spark: { result: [item] } }, ['XXXX3'])).toEqual([]);
+  });
+
+  it('várias ações sem nenhum dado de cotação indicam mudança de formato', () => {
+    const semDados = (t: string) => ({ symbol: `${t}.SA`, response: [{ dados: {} }] });
+    expect(() =>
+      interpretarSpark({ spark: { result: [semDados('BBAS3'), semDados('PETR4')] } }, [
+        'BBAS3',
+        'PETR4',
+      ]),
+    ).toThrow(/formato/);
+  });
+
   it('ações que o Yahoo não conhece simplesmente não vêm (sem erro)', () => {
     expect(interpretarSpark({ spark: { result: [] } }, ['ELET3'])).toEqual([]);
   });

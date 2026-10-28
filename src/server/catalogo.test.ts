@@ -605,6 +605,17 @@ describe('robustez (segunda revisão)', () => {
     expect(requisicoes).toHaveLength(1);
   });
 
+  it('falha ao consultar o estado das APIs não derruba a rota do catálogo', async () => {
+    const { catalogo, estado, requisicoes } = montar({ [URL_LISTA_BRAPI]: listaBrapi() });
+    vi.spyOn(estado, 'podeChamar').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+
+    await expect(catalogo.garantirAtualizado()).resolves.toBeUndefined();
+    await expect(catalogo.logo('BBAS3')).resolves.toBeNull();
+    expect(requisicoes).toHaveLength(0);
+  });
+
   it('falha ao contar o uso não derruba a rota do catálogo', async () => {
     const { buscar } = criarFetchFalso({ [URL_LISTA_BRAPI]: listaBrapi() });
     const uso = criarRepositorioUsoApi(banco);

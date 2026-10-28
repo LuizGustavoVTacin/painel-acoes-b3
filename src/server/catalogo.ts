@@ -5,7 +5,7 @@ import { emTransacao } from './banco/emTransacao.js';
 import type { RepositorioUsoApi } from './banco/usoApi.js';
 import { buscarListaBrapi } from './externo/brapi.js';
 import { ErroFonte } from './externo/erroFonte.js';
-import { contarUso, passou, registrarFalha, semFalhar } from './externo/apoio.js';
+import { contarUso, passou, podeChamar, registrarFalha, semFalhar } from './externo/apoio.js';
 import type { EstadoFontes } from './externo/estadoFontes.js';
 import { MENSAGEM_COBRANCA, requisitarExterno, type Buscar } from './externo/http.js';
 
@@ -147,7 +147,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
     // A última chamada fica também em memória: se o banco não gravar o estado, a pausa vale.
     const anteriores = [estado.consultar('brapi')?.ultimaTentativa, ultimaChamadaCatalogo];
     if (!anteriores.every((t) => passou(INTERVALO_MINIMO_CATALOGO_MS, t, momento))) return;
-    if (!estado.podeChamar('brapi', momento)) return;
+    if (!podeChamar(estado, 'brapi', momento)) return;
 
     ultimaChamadaCatalogo = momento.toISOString();
     contarUso(uso, 'brapi', momento);
@@ -184,7 +184,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
   async function conferirLogo(ticker: Ticker, url: string, salvo: LinhaLogo | undefined) {
     const momento = agora();
     // Pedidos que esperaram na fila conferem de novo: outro download pode ter pausado a fonte.
-    if (!estado.podeChamar('brapi_icones', momento)) return;
+    if (!podeChamar(estado, 'brapi_icones', momento)) return;
     const manter = {
       ticker,
       conteudo: salvo?.conteudo ?? null,
@@ -296,7 +296,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
       );
       const url = (buscarLogoUrl.get(ticker) as { logo_url: string | null } | undefined)?.logo_url;
 
-      if (vencido && url && estado.podeChamar('brapi_icones', momento)) {
+      if (vencido && url && podeChamar(estado, 'brapi_icones', momento)) {
         let conferencia = logosEmAndamento.get(ticker);
         if (!conferencia) {
           conferencia = limitarDownloads(() => conferirLogo(ticker, url, salvo)).finally(() =>
