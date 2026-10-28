@@ -8,11 +8,23 @@ const TEXTO_ESTADO: Record<EstadoServidor, string> = {
   indisponivel: 'Servidor indisponível',
 };
 
-export function App() {
+export const TEMPO_LIMITE_SAUDE_MS = 5000;
+
+interface PropsApp {
+  /** Tempo máximo de espera pela resposta de /api/saude. */
+  tempoLimiteMs?: number;
+}
+
+export function App({ tempoLimiteMs = TEMPO_LIMITE_SAUDE_MS }: PropsApp) {
   const [estado, setEstado] = useState<EstadoServidor>('carregando');
 
   useEffect(() => {
     const controle = new AbortController();
+    let expirou = false;
+    const temporizador = setTimeout(() => {
+      expirou = true;
+      controle.abort();
+    }, tempoLimiteMs);
 
     fetch('/api/saude', { signal: controle.signal })
       .then(async (resposta) => {
@@ -21,11 +33,16 @@ export function App() {
         setEstado(ok ? 'ok' : 'indisponivel');
       })
       .catch(() => {
-        if (!controle.signal.aborted) setEstado('indisponivel');
-      });
+        // Abortar por desmontagem do componente não é falha do servidor; por tempo esgotado, é.
+        if (expirou || !controle.signal.aborted) setEstado('indisponivel');
+      })
+      .finally(() => clearTimeout(temporizador));
 
-    return () => controle.abort();
-  }, []);
+    return () => {
+      clearTimeout(temporizador);
+      controle.abort();
+    };
+  }, [tempoLimiteMs]);
 
   return (
     <main>

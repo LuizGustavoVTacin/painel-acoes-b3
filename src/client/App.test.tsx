@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
@@ -40,6 +39,21 @@ describe('App', () => {
   it('mostra indisponível quando o servidor responde com erro', async () => {
     simularFetch(async () => new Response('falhou', { status: 500 }));
     render(<App />);
+
+    expect(await screen.findByText('Servidor indisponível')).toBeInTheDocument();
+  });
+
+  it('mostra indisponível quando o servidor não responde dentro do tempo limite', async () => {
+    const fetchFalso = vi.fn(
+      (_url: string, opcoes?: RequestInit) =>
+        new Promise<Response>((_resolver, rejeitar) => {
+          opcoes?.signal?.addEventListener('abort', () =>
+            rejeitar(new DOMException('Abortado', 'AbortError')),
+          );
+        }),
+    );
+    vi.stubGlobal('fetch', fetchFalso);
+    render(<App tempoLimiteMs={20} />);
 
     expect(await screen.findByText('Servidor indisponível')).toBeInTheDocument();
   });

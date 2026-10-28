@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { criarApp } from './app.js';
+import { criarApp, nomeDoHost } from './app.js';
 
 describe('GET /api/saude', () => {
   it('responde 200 com status ok e o horário atual em ISO', async () => {
@@ -33,6 +33,51 @@ describe('rotas inexistentes', () => {
   });
 });
 
+describe('erros de requisição', () => {
+  it('responde 400 em JSON quando o corpo JSON é malformado', async () => {
+    const resposta = await request(criarApp())
+      .post('/api/saude')
+      .set('Content-Type', 'application/json')
+      .send('{malformado');
+
+    expect(resposta.status).toBe(400);
+    expect(resposta.body).toEqual({ erro: 'Requisição inválida' });
+  });
+});
+
+describe('acesso somente local', () => {
+  it.each(['localhost:3000', '127.0.0.1:3000', '[::1]:3000', 'LOCALHOST'])(
+    'aceita o Host %s',
+    async (host) => {
+      const resposta = await request(criarApp()).get('/api/saude').set('Host', host);
+
+      expect(resposta.status).toBe(200);
+    },
+  );
+
+  it.each(['site-malicioso.example', 'localhost.example.com:3000', '192.168.0.10:3000'])(
+    'recusa com 403 o Host %s',
+    async (host) => {
+      const resposta = await request(criarApp()).get('/api/saude').set('Host', host);
+
+      expect(resposta.status).toBe(403);
+      expect(resposta.body).toEqual({ erro: 'Acesso permitido apenas pelo próprio computador' });
+    },
+  );
+});
+
+describe('nomeDoHost', () => {
+  it.each([
+    ['localhost:3000', 'localhost'],
+    ['127.0.0.1', '127.0.0.1'],
+    ['[::1]:3000', '[::1]'],
+    ['Exemplo.COM:80', 'exemplo.com'],
+    ['', ''],
+  ])('%j vira %j', (cabecalho, esperado) => {
+    expect(nomeDoHost(cabecalho)).toBe(esperado);
+  });
+});
+
 describe('frontend compilado', () => {
   let pasta: string;
 
@@ -52,6 +97,15 @@ describe('frontend compilado', () => {
       const resposta = await request(app).get(rota);
       expect(resposta.status).toBe(200);
       expect(resposta.text).toContain('Dashboard B3');
+    }
+  });
+
+  it('responde 404 para arquivos inexistentes em vez de devolver o index.html', async () => {
+    const app = criarApp({ pastaCliente: pasta });
+
+    for (const rota of ['/assets/antigo-abc123.js', '/favicon.ico']) {
+      const resposta = await request(app).get(rota);
+      expect(resposta.status).toBe(404);
     }
   });
 
