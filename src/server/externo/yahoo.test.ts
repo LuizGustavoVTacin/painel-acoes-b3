@@ -175,6 +175,18 @@ describe('buscarLoteYahoo', () => {
     );
   });
 
+  it('404 "Not Found" falando de assinatura é bloqueio, não "nenhuma ação"', async () => {
+    const corpo = {
+      spark: {
+        result: null,
+        error: { code: 'Not Found', description: 'Subscription required: upgrade your plan' },
+      },
+    };
+    const { buscar } = criarFetchFalso({ [URL_YAHOO]: json(corpo, { status: 404 }) });
+
+    expect((await falha(buscarLoteYahoo(buscar, ['BBAS3'], AGORA))).situacao).toBe('bloqueada');
+  });
+
   it('404 pedindo pagamento continua sendo bloqueio', async () => {
     const { buscar } = criarFetchFalso({
       [URL_YAHOO]: new Response('Subscription required: upgrade your plan', { status: 404 }),

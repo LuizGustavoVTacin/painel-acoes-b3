@@ -177,9 +177,9 @@ body {
   outline-offset: 3px;
 }
 
-/* O anel do ativo já mostra onde está o foco. */
+/* O anel do ativo já mostra onde está o foco (transparente, o contorno reaparece no alto contraste). */
 .quadrado-ativo:focus-visible {
-  outline: none;
+  outline-color: transparent;
 }
 
 /* Por cima dos vizinhos, para a sombra não ficar escondida atrás deles. */
@@ -195,6 +195,19 @@ body {
 .quadrado-vizinho {
   border-color: color-mix(in srgb, var(--destaque) 50%, var(--borda));
   background: color-mix(in srgb, var(--destaque) 6%, var(--superficie));
+}
+
+/* Alto contraste do Windows: sombras e fundos somem, então o destaque vira contorno. */
+@media (forced-colors: active) {
+  .quadrado-ativo,
+  .quadrado-ativo:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  .quadrado-vizinho {
+    outline: 1px dashed Highlight;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

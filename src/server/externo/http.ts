@@ -72,7 +72,7 @@ export function mencionaCobranca(texto: string): boolean {
   return TEXTOS_DE_COBRANCA.test(texto);
 }
 
-function temCabecalhoDeCobranca(cabecalhos: Headers): boolean {
+export function temCabecalhoDeCobranca(cabecalhos: Headers): boolean {
   return CABECALHOS_DE_COBRANCA.some((nome) => cabecalhos.has(nome));
 }
 

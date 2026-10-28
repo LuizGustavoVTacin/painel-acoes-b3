@@ -304,6 +304,20 @@ describe('GradeAcoes', () => {
       );
     });
 
+    it('depois de sair da janela, o foco que volta por outro caminho destaca normalmente', () => {
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      act(() => quadrado('PETR4').focus());
+
+      // Saiu da janela; voltou pela barra de endereço e entrou na grade por outro quadrado.
+      janelaComFoco = false;
+      fireEvent.blur(quadrado('PETR4'));
+      janelaComFoco = true;
+      act(() => quadrado('WEGE3').focus());
+      act(() => quadrado('PETR4').focus());
+
+      expect(destaques().ativo).toEqual(['PETR4']);
+    });
+
     it('trocar de janela e voltar não muda o destaque', () => {
       render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
       act(() => quadrado('PETR4').focus());
@@ -348,15 +362,45 @@ describe('GradeAcoes', () => {
       expect(fireEvent.keyDown(quadrado('ITUB4'), { key: 'a' })).toBe(true);
     });
 
-    it('foco depois de um arraste que terminou fora da grade volta a destacar', () => {
-      const relogio = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    it('foco depois de um arraste que terminou fora da grade volta a destacar', async () => {
       render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
-      fireEvent.pointerDown(quadrado('B3SA3'), { pointerType: 'mouse' }); // soltou fora: sem clique
+      fireEvent.pointerDown(quadrado('B3SA3'), { pointerType: 'mouse' });
+      fireEvent.pointerUp(document.body, { pointerType: 'mouse' }); // soltou fora: sem clique
+      await act(() => new Promise((resolver) => setTimeout(resolver, 0)));
 
-      relogio.mockReturnValue(5000);
       act(() => quadrado('PETR4').focus());
 
       expect(destaques().ativo).toEqual(['PETR4']);
+    });
+
+    it('toque longo (foco chega depois de soltar) liga e não desliga em seguida', () => {
+      temHover = false;
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      const alvo = quadrado('B3SA3');
+
+      // No toque, o foco e o clique vêm depois de soltar, no mesmo gesto.
+      fireEvent.pointerDown(alvo, { pointerType: 'touch' });
+      fireEvent.pointerUp(alvo, { pointerType: 'touch' });
+      fireEvent.focus(alvo);
+      fireEvent.click(alvo);
+
+      expect(destaques().ativo).toEqual(['B3SA3']);
+    });
+
+    it('depois de clicar em outro quadrado, o mouse saindo não volta ao foco antigo', () => {
+      render(<GradeAcoes cotacoes={COTACOES} rodada={1} />);
+      act(() => quadrado('BBAS3').focus()); // Tab entrou na grade
+      passarMouse('ITUB4');
+      fireEvent.pointerDown(quadrado('ITUB4'), { pointerType: 'mouse' });
+      act(() => quadrado('ITUB4').focus());
+      fireEvent.click(quadrado('ITUB4'));
+
+      fireEvent.pointerOut(quadrado('ITUB4'), {
+        pointerType: 'mouse',
+        relatedTarget: document.body,
+      });
+
+      expect(destaques().ativo).toEqual([]);
     });
 
     it('toque cancelado pela rolagem não deixa o ponteiro preso', () => {

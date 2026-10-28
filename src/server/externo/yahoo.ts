@@ -2,7 +2,13 @@ import { reaisParaCentavos, type Centavos } from '../../shared/dinheiro.js';
 import { normalizarTicker, type Ticker } from '../../shared/ticker.js';
 import type { Pregao } from '../pregao.js';
 import { ErroFonte } from './erroFonte.js';
-import { classificarFalha, requisitarExterno, type Buscar } from './http.js';
+import {
+  classificarFalha,
+  mencionaCobranca,
+  requisitarExterno,
+  temCabecalhoDeCobranca,
+  type Buscar,
+} from './http.js';
 
 /**
  * Endpoint "spark" do Yahoo Finance: cotações de várias ações numa chamada, sem chave, conta,
@@ -153,7 +159,8 @@ export async function buscarLoteYahoo(
     throw formatoAlterado('resposta não é JSON');
   }
   if (status === 404) {
-    if (nenhumaAcaoEncontrada(json)) return [];
+    const cobranca = temCabecalhoDeCobranca(cabecalhos) || mencionaCobranca(texto);
+    if (nenhumaAcaoEncontrada(json) && !cobranca) return [];
     // Outro 404 (ex.: o endereço deixou de existir) segue a classificação de sempre.
     throw classificarFalha(status, cabecalhos, texto, agora);
   }

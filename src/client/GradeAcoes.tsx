@@ -26,12 +26,6 @@ interface PropsGrade {
   rodada: number;
 }
 
-/**
- * Um ponteiro pressionado só explica o foco e o clique logo em seguida. Depois disso
- * (arrastou para fora, a rolagem com o dedo cancelou o toque), o registro é esquecido.
- */
-const VALIDADE_PONTEIRO_MS = 1000;
-
 /** Ticker do quadrado onde o evento aconteceu (o evento é tratado na grade, por delegação). */
 function tickerDoEvento(evento: SyntheticEvent): Ticker | null {
   const alvo = evento.target as Element | null;
@@ -50,8 +44,11 @@ export function GradeAcoes({ cotacoes, rodada }: PropsGrade) {
   const [ativo, setAtivo] = useState<Ativo | null>(null);
   /** Quadrado que recebe o Tab ao entrar na grade (um só ponto de parada). */
   const [focavel, setFocavel] = useState<Ticker | null>(null);
-  /** Último ponteiro pressionado, para o foco e o clique saberem se vieram dele. */
-  const ultimoPonteiro = useRef<{ tipo: string; em: number } | null>(null);
+  /**
+   * Ponteiro pressionado agora, para o foco e o clique saberem se vieram dele. Vale até o fim
+   * do gesto (logo após soltar) ou até ele ser cancelado pela rolagem com o dedo.
+   */
+  const ultimoPonteiro = useRef<string | null>(null);
   /** Quadrado focado pelo teclado (não por clique ou toque). */
   const focoDoTeclado = useRef<Ticker | null>(null);
   /** Quadrado que tinha o foco quando a janela perdeu o foco (Alt+Tab). */
@@ -67,13 +64,24 @@ export function GradeAcoes({ cotacoes, rodada }: PropsGrade) {
   // E não volta sozinho se a ação for escolhida de novo depois (ajuste durante a renderização).
   if (ativo && indiceAtivo === -1) setAtivo(null);
 
-  // Tocar fora da grade apaga o destaque.
+  // Tocar fora da grade apaga o destaque. Ao soltar o ponteiro (mesmo fora da grade), o gesto
+  // termina: depois do foco e do clique que ele causa, o registro é esquecido.
   useEffect(() => {
     const aoPressionar = (evento: globalThis.PointerEvent) => {
       if (!grade.current?.contains(evento.target as Node)) setAtivo(null);
     };
+    let esquecer: ReturnType<typeof setTimeout> | undefined;
+    const aoSoltar = () => {
+      clearTimeout(esquecer);
+      esquecer = setTimeout(() => (ultimoPonteiro.current = null), 0);
+    };
     document.addEventListener('pointerdown', aoPressionar);
-    return () => document.removeEventListener('pointerdown', aoPressionar);
+    document.addEventListener('pointerup', aoSoltar);
+    return () => {
+      clearTimeout(esquecer);
+      document.removeEventListener('pointerdown', aoPressionar);
+      document.removeEventListener('pointerup', aoSoltar);
+    };
   }, []);
 
   function ativar(ticker: Ticker, origem: Origem) {
@@ -81,13 +89,6 @@ export function GradeAcoes({ cotacoes, rodada }: PropsGrade) {
     setAtivo((atual) =>
       atual?.ticker === ticker && atual.origem === origem ? atual : { ticker, origem },
     );
-  }
-
-  /** Tipo do ponteiro pressionado há pouco, ou null se o evento não veio de um ponteiro. */
-  function ponteiroRecente(): string | null {
-    const registro = ultimoPonteiro.current;
-    if (!registro || performance.now() - registro.em > VALIDADE_PONTEIRO_MS) return null;
-    return registro.tipo;
   }
 
   function aoPassarPorCima(evento: PointerEvent) {
@@ -99,12 +100,12 @@ export function GradeAcoes({ cotacoes, rodada }: PropsGrade) {
   function aoSairDaGrade(evento: PointerEvent) {
     if (evento.pointerType !== 'mouse' || ativo?.origem !== 'mouse') return;
     const focado = focoDoTeclado.current;
-    if (focado) ativar(focado, 'teclado');
+    if (focado && cotacoes.some((c) => c.ticker === focado)) ativar(focado, 'teclado');
     else setAtivo(null);
   }
 
   function aoPressionar(evento: PointerEvent) {
-    ultimoPonteiro.current = { tipo: evento.pointerType, em: performance.now() };
+    ultimoPonteiro.current = evento.pointerType;
   }
 
   function aoCancelarPonteiro() {
@@ -113,9 +114,11 @@ export function GradeAcoes({ cotacoes, rodada }: PropsGrade) {
 
   // Toque (ou ponteiro sem hover): liga, desliga no mesmo quadrado, ou muda para outro.
   function aoClicar(evento: SyntheticEvent) {
-    const tipo = ponteiroRecente();
+    // O clique já diz de que ponteiro veio (Chromium e Firefox); o registro é o plano B.
+    const tipo =
+      (evento.nativeEvent as globalThis.PointerEvent).pointerType || ultimoPonteiro.current;
     ultimoPonteiro.current = null;
-    if (tipo === null || (tipo === 'mouse' && podePassarPorCima)) return;
+    if (!tipo || (tipo === 'mouse' && podePassarPorCima)) return;
     const ticker = tickerDoEvento(evento);
     if (!ticker || ativo?.ticker === ticker) {
       setAtivo(null); // no próprio quadrado ativo ou no vão entre os quadrados
@@ -130,12 +133,14 @@ export function GradeAcoes({ cotacoes, rodada }: PropsGrade) {
     if (!ticker) return;
     setFocavel(ticker);
     // A janela voltou a ter foco: o quadrado recupera o foco, mas o destaque fica como estava.
-    if (focoAoSairDaJanela.current === ticker) {
-      focoAoSairDaJanela.current = null;
+    const voltouDaJanela = focoAoSairDaJanela.current === ticker;
+    focoAoSairDaJanela.current = null;
+    if (voltouDaJanela) return;
+    // O foco que vem junto de um clique ou toque é tratado pelo próprio clique.
+    if (ultimoPonteiro.current !== null) {
+      focoDoTeclado.current = null;
       return;
     }
-    // O foco que vem junto de um clique ou toque é tratado pelo próprio clique.
-    if (ponteiroRecente() !== null) return;
     focoDoTeclado.current = ticker;
     ativar(ticker, 'teclado');
   }
