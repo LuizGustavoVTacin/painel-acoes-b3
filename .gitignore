@@ -1,0 +1,13 @@
+# Banco de dados local (suas transações)
+*.db
+*.sqlite
+*.sqlite3
+
+# Chaves e configurações secretas
+.env
+
+# Configurações pessoais do Claude Code
+.claude/settings.local.json
+
+# Dependências
+node_modules/
