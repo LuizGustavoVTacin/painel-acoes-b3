@@ -13,6 +13,7 @@ import {
   listarTransacoes,
   salvarSelecao,
 } from './api';
+import { AvisoDeGrade, type AvisoGrade } from './AvisoDeGrade';
 import { FormularioCompra } from './FormularioCompra';
 import {
   compraEmBranco,
@@ -23,7 +24,7 @@ import {
 } from './regrasCompra';
 import { Painel } from './Painel';
 import { ResumoCompras, TabelaCompras } from './TabelaCompras';
-import { comTempoLimite, TEMPO_LIMITE_PAINEL_MS, useCarga } from './useCarga';
+import { comTempoLimite, ErroTempoEsgotado, TEMPO_LIMITE_PAINEL_MS, useCarga } from './useCarga';
 
 interface PropsRegistro {
   aoFechar: () => void;
@@ -31,15 +32,6 @@ interface PropsRegistro {
   aoMudarGrade: () => void;
   tempoLimiteMs?: number;
 }
-
-/** Situação do aviso "não está na grade", mostrado depois de registrar uma compra. */
-type AvisoGrade =
-  | { situacao: 'fora'; ticker: Ticker }
-  /** O código não está na lista da B3 (provável erro de digitação): não é oferecido à grade. */
-  | { situacao: 'desconhecida'; ticker: Ticker }
-  | { situacao: 'adicionando'; ticker: Ticker }
-  | { situacao: 'adicionada'; ticker: Ticker }
-  | { situacao: 'erro'; ticker: Ticker; mensagem: string };
 
 /** Erro de tempo esgotado ao gravar: o servidor pode ter gravado mesmo assim. */
 function erroDeEspera(oQue: string): ErroApi {
@@ -111,13 +103,11 @@ export function RegistroCompras({
   }
 
   async function gravar(dados: DadosTransacao): Promise<void> {
-    const controle = new AbortController();
     let salva: Transacao;
     try {
       salva = await comTempoLimite(
         (signal) =>
           editando ? atualizarTransacao(editando.id, dados, signal) : criarTransacao(dados, signal),
-        controle,
         tempoLimiteMs,
       );
     } catch (erro) {
@@ -128,7 +118,7 @@ export function RegistroCompras({
         setRecado('A compra que você editava não existe mais; a lista foi atualizada.');
         return;
       }
-      if (!controle.signal.aborted) throw erro;
+      if (!(erro instanceof ErroTempoEsgotado)) throw erro;
       // O servidor demorou: a gravação pode ter acontecido, então a lista é buscada de novo.
       recarregar();
       throw erroDeEspera(editando ? 'a alteração' : 'a compra');
@@ -157,14 +147,13 @@ export function RegistroCompras({
   }
 
   async function excluir(id: number): Promise<void> {
-    const controle = new AbortController();
     try {
-      await comTempoLimite((signal) => excluirTransacao(id, signal), controle, tempoLimiteMs);
+      await comTempoLimite((signal) => excluirTransacao(id, signal), tempoLimiteMs);
     } catch (erro) {
       // 404: já tinha sido excluída (outra aba); o resultado é o que o usuário queria.
       const jaExcluida = erro instanceof ErroApi && erro.status === 404;
       if (!jaExcluida) {
-        if (!controle.signal.aborted) throw erro;
+        if (!(erro instanceof ErroTempoEsgotado)) throw erro;
         recarregar();
         throw erroDeEspera('a exclusão');
       }
@@ -176,32 +165,28 @@ export function RegistroCompras({
   async function adicionarAGrade(ticker: Ticker): Promise<void> {
     campoTicker.current?.focus();
     setAviso({ situacao: 'adicionando', ticker });
-    const controle = new AbortController();
     try {
       // A seleção é lida de novo na hora: o menu (ou outra aba) pode tê-la mudado.
-      const nova = await comTempoLimite(
-        async (signal) => {
-          const atual = await buscarSelecao(signal);
-          if (atual.includes(ticker)) return atual;
-          if (atual.length >= LIMITE_ACOES_SELECIONADAS) {
-            throw new ErroApi(
-              `A grade já tem ${LIMITE_ACOES_SELECIONADAS} ações; tire alguma em Menu → Escolher ações.`,
-            );
-          }
-          return salvarSelecao([...atual, ticker], signal);
-        },
-        controle,
-        tempoLimiteMs,
-      );
+      const nova = await comTempoLimite(async (signal) => {
+        const atual = await buscarSelecao(signal);
+        if (atual.includes(ticker)) return atual;
+        if (atual.length >= LIMITE_ACOES_SELECIONADAS) {
+          throw new ErroApi(
+            `A grade já tem ${LIMITE_ACOES_SELECIONADAS} ações; tire alguma em Menu → Escolher ações.`,
+          );
+        }
+        return salvarSelecao([...atual, ticker], signal);
+      }, tempoLimiteMs);
       setSelecaoAtual(nova);
       setAviso({ situacao: 'adicionada', ticker });
       aoMudarGrade();
     } catch (erro) {
-      if (controle.signal.aborted) aoMudarGrade();
+      const expirou = erro instanceof ErroTempoEsgotado;
+      if (expirou) aoMudarGrade();
       setAviso({
         situacao: 'erro',
         ticker,
-        mensagem: controle.signal.aborted
+        mensagem: expirou
           ? 'O servidor demorou para responder; confira a grade antes de tentar de novo'
           : erro instanceof ErroApi
             ? erro.message
@@ -299,51 +284,5 @@ export function RegistroCompras({
         </button>
       </div>
     </Painel>
-  );
-}
-
-interface PropsAviso {
-  aviso: AvisoGrade;
-  selecao: readonly Ticker[] | null;
-  aoAdicionar: (ticker: Ticker) => Promise<void>;
-}
-
-/** Depois de registrar a compra de uma ação que não tem quadrado na grade. */
-function AvisoDeGrade({ aviso, selecao, aoAdicionar }: PropsAviso) {
-  const { ticker } = aviso;
-  if (aviso.situacao === 'desconhecida') {
-    return (
-      <p role="status" className="aviso-grade">
-        {ticker} foi registrada, mas não está na lista de ações da B3. Confira o código: se estiver
-        errado, edite a compra abaixo.
-      </p>
-    );
-  }
-  if (aviso.situacao === 'adicionada') {
-    return (
-      <p role="status" className="aviso-grade">
-        {ticker} foi adicionada à grade.
-      </p>
-    );
-  }
-  const cheia = (selecao?.length ?? 0) >= LIMITE_ACOES_SELECIONADAS;
-  return (
-    <div role="status" className="aviso-grade">
-      <span>
-        {ticker} não está na grade.
-        {cheia &&
-          ` A grade já tem ${LIMITE_ACOES_SELECIONADAS} ações; para incluir ${ticker}, tire alguma em Menu → Escolher ações.`}
-      </span>{' '}
-      {!cheia && (
-        <button
-          type="button"
-          disabled={aviso.situacao === 'adicionando'}
-          onClick={() => void aoAdicionar(ticker)}
-        >
-          {aviso.situacao === 'adicionando' ? 'Adicionando…' : 'Adicionar à grade'}
-        </button>
-      )}
-      {aviso.situacao === 'erro' && <p className="campo-erro">{aviso.mensagem}</p>}
-    </div>
   );
 }

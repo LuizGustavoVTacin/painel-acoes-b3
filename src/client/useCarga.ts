@@ -9,15 +9,35 @@ export type Carga<T> =
  */
 export const TEMPO_LIMITE_PAINEL_MS = 20 * 1000;
 
-/** Roda `tarefa` com um sinal que é cancelado por `controle` ou ao passar o tempo limite. */
+/**
+ * O servidor não respondeu a tempo. Numa gravação, ela pode ter acontecido mesmo assim:
+ * quem recebe este erro deve conferir os dados antes de deixar o usuário tentar de novo.
+ */
+export class ErroTempoEsgotado extends Error {
+  constructor() {
+    super('O servidor do dashboard demorou demais para responder');
+    this.name = 'ErroTempoEsgotado';
+  }
+}
+
+/**
+ * Roda `tarefa` com um sinal que é cancelado por `controle` ou ao passar o tempo limite.
+ * Se foi o tempo limite que cancelou, lança ErroTempoEsgotado.
+ */
 export async function comTempoLimite<T>(
   tarefa: (signal: AbortSignal) => Promise<T>,
-  controle: AbortController,
   tempoLimiteMs: number,
+  controle = new AbortController(),
 ): Promise<T> {
-  const limite = setTimeout(() => controle.abort(), tempoLimiteMs);
+  let expirou = false;
+  const limite = setTimeout(() => {
+    expirou = true;
+    controle.abort();
+  }, tempoLimiteMs);
   try {
     return await tarefa(controle.signal);
+  } catch (erro) {
+    throw expirou ? new ErroTempoEsgotado() : erro;
   } finally {
     clearTimeout(limite);
   }
@@ -38,7 +58,7 @@ export function useCarga<T>(
   useEffect(() => {
     let ativo = true;
     const controle = new AbortController();
-    comTempoLimite(buscar, controle, tempoLimiteMs).then(
+    comTempoLimite(buscar, tempoLimiteMs, controle).then(
       (dados) => {
         if (ativo) setCarga({ situacao: 'ok', dados });
       },

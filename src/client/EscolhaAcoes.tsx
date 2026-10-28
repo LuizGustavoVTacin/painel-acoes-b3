@@ -4,7 +4,7 @@ import type { Ticker } from '../shared/ticker';
 import { buscarCatalogo, buscarSelecao, ErroApi, salvarSelecao } from './api';
 import { alternarAcao, montarListaEscolha, selecaoFinal } from './escolha';
 import { Painel } from './Painel';
-import { comTempoLimite, TEMPO_LIMITE_PAINEL_MS, useCarga } from './useCarga';
+import { comTempoLimite, ErroTempoEsgotado, TEMPO_LIMITE_PAINEL_MS, useCarga } from './useCarga';
 
 interface PropsEscolha {
   aoFechar: () => void;
@@ -82,13 +82,12 @@ export function EscolhaAcoes({
     campoBusca.current?.focus();
     setSalvando(true);
     setErroAoSalvar(null);
-    const controle = new AbortController();
     try {
-      await comTempoLimite((signal) => salvarSelecao(aSalvar, signal), controle, tempoLimiteMs);
+      await comTempoLimite((signal) => salvarSelecao(aSalvar, signal), tempoLimiteMs);
       // Mesmo com o painel já fechado, o servidor gravou: a grade precisa ser atualizada.
       aoSalvar();
     } catch (erro) {
-      const expirou = controle.signal.aborted;
+      const expirou = erro instanceof ErroTempoEsgotado;
       if (expirou) aoTalvezSalvo?.();
       if (!montado.current) return;
       let mensagem = 'Não foi possível salvar a seleção; tente de novo';
