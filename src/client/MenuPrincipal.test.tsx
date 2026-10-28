@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EscolhaAcoes } from './EscolhaAcoes';
 import { MenuPrincipal } from './MenuPrincipal';
 
 const CATALOGO = [
@@ -9,7 +10,14 @@ const CATALOGO = [
   { ticker: 'VALE3', nome: 'Vale', logo: '/api/logos/VALE3' },
 ];
 
-type Rota = () => Response | Promise<Response>;
+type Rota = (signal?: AbortSignal | null) => Response | Promise<Response>;
+
+/** Resposta que nunca chega; só termina (com erro) se o pedido for cancelado. */
+function nuncaResponde(signal?: AbortSignal | null): Promise<Response> {
+  return new Promise((_, falhar) =>
+    signal?.addEventListener('abort', () => falhar(new DOMException('Abortado', 'AbortError'))),
+  );
+}
 
 /** Servidor falso: responde por endereço e método; guarda o corpo de cada PUT recebido. */
 function simularServidor(rotas: { catalogo?: Rota; selecao?: Rota; salvar?: Rota } = {}) {
@@ -17,17 +25,19 @@ function simularServidor(rotas: { catalogo?: Rota; selecao?: Rota; salvar?: Rota
   let selecao: string[] = ['PETR4'];
   const fetchFalso = vi.fn(async (endereco: string, opcoes: RequestInit = {}) => {
     if (endereco === '/api/catalogo') {
-      return rotas.catalogo ? rotas.catalogo() : Response.json({ acoes: CATALOGO });
+      return rotas.catalogo ? rotas.catalogo(opcoes.signal) : Response.json({ acoes: CATALOGO });
     }
     if (endereco === '/api/selecao' && opcoes.method === 'PUT') {
       const corpo = JSON.parse(opcoes.body as string) as { tickers: string[] };
       salvas.push(corpo);
-      if (rotas.salvar) return rotas.salvar();
+      if (rotas.salvar) return rotas.salvar(opcoes.signal);
       selecao = corpo.tickers;
       return Response.json({ tickers: selecao, limite: 50 });
     }
     if (endereco === '/api/selecao') {
-      return rotas.selecao ? rotas.selecao() : Response.json({ tickers: selecao, limite: 50 });
+      return rotas.selecao
+        ? rotas.selecao(opcoes.signal)
+        : Response.json({ tickers: selecao, limite: 50 });
     }
     return new Response('não encontrado', { status: 404 });
   });
@@ -241,6 +251,124 @@ describe('MenuPrincipal', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Selecione no máximo 50 ações');
     expect(caixa('BBAS3')).toBeChecked();
     expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled();
+    expect(aoSalvar).not.toHaveBeenCalled();
+  });
+
+  it('catálogo vazio (brapi ainda não baixada) é falha, com "Tentar de novo"', async () => {
+    simularServidor({ catalogo: () => Response.json({ acoes: [] }) });
+    render(<MenuPrincipal aoSalvarSelecao={() => {}} />);
+    await abrirEscolha();
+
+    expect(screen.getByRole('alert')).toHaveTextContent('lista de ações da B3');
+    expect(screen.getByRole('button', { name: 'Tentar de novo' })).toBeInTheDocument();
+    expect(caixa('PETR4').closest('label')).toHaveTextContent('nome indisponível');
+  });
+
+  it('as salvas aparecem enquanto o catálogo ainda carrega', async () => {
+    simularServidor({ catalogo: nuncaResponde });
+    render(<MenuPrincipal aoSalvarSelecao={() => {}} />);
+    await abrirEscolha();
+
+    expect(linhas()).toEqual(['PETR4']);
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando a lista de ações da B3');
+  });
+
+  it('durante o salvamento, caixas, busca, Cancelar e Esc ficam travados', async () => {
+    let concluir: (resposta: Response) => void = () => {};
+    simularServidor({ salvar: () => new Promise((r) => (concluir = r)) });
+    const aoSalvar = vi.fn();
+    render(<MenuPrincipal aoSalvarSelecao={aoSalvar} />);
+    await abrirEscolha();
+
+    fireEvent.click(caixa('BBAS3'));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    expect(screen.getByRole('button', { name: 'Salvando…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+    expect(caixa('VALE3')).toBeDisabled();
+    expect(screen.getByRole('searchbox')).toHaveAttribute('readonly');
+    fireEvent.keyDown(caixa('BBAS3'), { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    concluir(Response.json({ tickers: ['PETR4', 'BBAS3'], limite: 50 }));
+    await waitFor(() => expect(aoSalvar).toHaveBeenCalledOnce());
+  });
+
+  it('desmarcar e marcar de novo não conta como mudança nem reordena', async () => {
+    const { salvas } = simularServidor({
+      selecao: () => Response.json({ tickers: ['PETR4', 'BBAS3'], limite: 50 }),
+    });
+    render(<MenuPrincipal aoSalvarSelecao={() => {}} />);
+    await abrirEscolha();
+
+    fireEvent.click(caixa('PETR4'));
+    fireEvent.click(caixa('PETR4'));
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled();
+
+    fireEvent.click(caixa('PETR4'));
+    fireEvent.click(caixa('VALE3'));
+    fireEvent.click(caixa('PETR4'));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(salvas).toEqual([{ tickers: ['PETR4', 'BBAS3', 'VALE3'] }]));
+  });
+
+  it('Esc com texto na busca só limpa a busca; vazio, fecha o painel', async () => {
+    simularServidor();
+    render(<MenuPrincipal aoSalvarSelecao={() => {}} />);
+    await abrirEscolha();
+    fireEvent.click(caixa('BBAS3'));
+
+    const campo = screen.getByRole('searchbox');
+    fireEvent.change(campo, { target: { value: 'vale' } });
+    fireEvent.keyDown(campo, { key: 'Escape' });
+
+    expect(campo).toHaveValue('');
+    expect(caixa('BBAS3')).toBeChecked();
+
+    fireEvent.keyDown(campo, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('o Tab não sai do painel', async () => {
+    simularServidor();
+    render(<MenuPrincipal aoSalvarSelecao={() => {}} />);
+    await abrirEscolha();
+    const campo = screen.getByRole('searchbox');
+    const cancelar = screen.getByRole('button', { name: 'Cancelar' });
+
+    // Salvar está desabilitado: Cancelar é o último elemento focável.
+    cancelar.focus();
+    fireEvent.keyDown(cancelar, { key: 'Tab' });
+    expect(campo).toHaveFocus();
+
+    fireEvent.keyDown(campo, { key: 'Tab', shiftKey: true });
+    expect(cancelar).toHaveFocus();
+  });
+});
+
+describe('EscolhaAcoes com tempo limite', () => {
+  afterEach(cleanup);
+
+  it('servidor travado: depois do tempo limite oferece "Tentar de novo"', async () => {
+    simularServidor({ selecao: nuncaResponde, catalogo: nuncaResponde });
+    render(<EscolhaAcoes aoFechar={() => {}} aoSalvar={() => {}} tempoLimiteMs={30} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar as ações selecionadas',
+    );
+  });
+
+  it('salvamento travado: depois do tempo limite mostra o erro e libera o painel', async () => {
+    simularServidor({ salvar: nuncaResponde });
+    const aoSalvar = vi.fn();
+    render(<EscolhaAcoes aoFechar={() => {}} aoSalvar={aoSalvar} tempoLimiteMs={30} />);
+    await screen.findByRole('list', { name: 'Ações disponíveis' });
+
+    fireEvent.click(caixa('BBAS3'));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível salvar a seleção');
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeEnabled();
     expect(aoSalvar).not.toHaveBeenCalled();
   });
 });

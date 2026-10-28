@@ -199,8 +199,12 @@ export async function buscarSelecao(signal: AbortSignal): Promise<Ticker[]> {
 }
 
 /** Troca a seleção inteira e devolve a que ficou salva no servidor. */
-export async function salvarSelecao(tickers: readonly Ticker[]): Promise<Ticker[]> {
+export async function salvarSelecao(
+  tickers: readonly Ticker[],
+  signal?: AbortSignal,
+): Promise<Ticker[]> {
   const corpo = await pedirJson('/api/selecao', {
+    signal,
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ tickers }),

@@ -45,3 +45,16 @@ export function montarListaEscolha(
   ];
   return filtrarAcoes(itens, busca);
 }
+
+/**
+ * Seleção a salvar: as que já estavam salvas mantêm a posição na grade e as novas vão para o fim,
+ * na ordem em que foram marcadas. Desmarcar e marcar de novo não mexe na ordem.
+ */
+export function selecaoFinal(salvas: readonly Ticker[], marcadas: readonly Ticker[]): Ticker[] {
+  const marcadasSet = new Set(marcadas);
+  const salvasSet = new Set(salvas);
+  return [
+    ...salvas.filter((ticker) => marcadasSet.has(ticker)),
+    ...marcadas.filter((ticker) => !salvasSet.has(ticker)),
+  ];
+}

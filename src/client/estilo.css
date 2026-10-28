@@ -354,6 +354,14 @@ button {
   font-size: 13px;
 }
 
+/* Fundo do painel: escurece e bloqueia a grade enquanto as ações são escolhidas. */
+.escolha-fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  background: rgb(0 0 0 / 30%);
+}
+
 /* Painel de escolha das ações: à direita em telas largas, a tela toda no celular. */
 .escolha {
   position: fixed;

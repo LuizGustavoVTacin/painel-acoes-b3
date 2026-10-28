@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alternarAcao, montarListaEscolha } from './escolha';
+import { alternarAcao, montarListaEscolha, selecaoFinal } from './escolha';
 
 describe('alternarAcao', () => {
   it('marca no fim, preservando a ordem de escolha', () => {
@@ -64,5 +64,21 @@ describe('montarListaEscolha', () => {
     expect(montarListaEscolha([], ['BBAS3'], '')).toEqual([
       { ticker: 'BBAS3', nome: '', foraDoCatalogo: true },
     ]);
+  });
+});
+
+describe('selecaoFinal', () => {
+  it('as salvas mantêm a posição; as novas vão para o fim na ordem marcada', () => {
+    expect(selecaoFinal(['PETR4', 'BBAS3', 'VALE3'], ['VALE3', 'ITUB4', 'PETR4', 'WEGE3'])).toEqual(
+      ['PETR4', 'VALE3', 'ITUB4', 'WEGE3'],
+    );
+  });
+
+  it('desmarcar e marcar de novo não muda a ordem', () => {
+    expect(selecaoFinal(['PETR4', 'BBAS3'], ['BBAS3', 'PETR4'])).toEqual(['PETR4', 'BBAS3']);
+  });
+
+  it('desmarcar tudo dá lista vazia', () => {
+    expect(selecaoFinal(['PETR4'], [])).toEqual([]);
   });
 });
