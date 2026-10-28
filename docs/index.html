@@ -155,7 +155,7 @@
               <strong>Grade na tela e rodapé</strong>
               <span>Quadrados, atualização a cada 5 min, fonte em uso e avisos.</span>
             </li>
-            <li>
+            <li class="feita">
               <strong>Destaque dos vizinhos</strong>
               <span>Mouse, toque e teclado.</span>
             </li>
@@ -180,9 +180,9 @@
           <div class="aviso aviso-dica">
             <span aria-hidden="true">ℹ</span>
             <p>
-              O servidor, a lógica e a grade de cotações com o rodapé já estão prontos e testados;
-              destaque, menu e formulários chegam nas próximas etapas. Os capítulos marcam o que já
-              existe com
+              O servidor, a lógica, a grade de cotações com o rodapé e o destaque dos vizinhos já
+              estão prontos e testados; menu e formulários chegam nas próximas etapas. Os capítulos
+              marcam o que já existe com
               <span class="etiqueta etiqueta-feito">pronto</span> e o que vem depois com
               <span class="etiqueta etiqueta-pendente">próximas etapas</span>.
             </p>
@@ -399,10 +399,11 @@ docs/            Esta documentação</code></pre>
         <section id="tela">
           <span class="capitulo">Capítulo 04 · Funcionalidades</span>
           <h2 class="titulo">
-            A tela do dashboard <span class="etiqueta etiqueta-feito">grade e rodapé prontos</span>
+            A tela do dashboard
+            <span class="etiqueta etiqueta-feito">grade, rodapé e destaque prontos</span>
           </h2>
           <p class="resumo">
-            Grade, atualização automática e rodapé já funcionam; destaque, menu e setas chegam nas
+            Grade, atualização automática, rodapé e destaque já funcionam; menu e setas chegam nas
             próximas etapas.
           </p>
 
@@ -442,13 +443,12 @@ docs/            Esta documentação</code></pre>
             as demais ações ficam acessíveis rolando a página. Os quadrados continuam quadrados.
           </p>
 
-          <h3>
-            Destaque dos vizinhos <span class="etiqueta etiqueta-pendente">próximas etapas</span>
-          </h3>
+          <h3>Destaque dos vizinhos <span class="etiqueta etiqueta-feito">pronto</span></h3>
           <p>
-            O quadrado ativo ganha destaque forte e os 4 vizinhos (acima, abaixo, esquerda e
-            direita) um destaque suave. O número de colunas é lido do layout real, e o cálculo dos
-            vizinhos é uma função pura testada.
+            O quadrado ativo ganha destaque forte (fundo e anel na cor de destaque) e os 4 vizinhos
+            (acima, abaixo, esquerda e direita) um tom suave. O fim de uma linha não é vizinho do
+            começo da próxima. O número de colunas é lido do layout real e relido ao redimensionar a
+            janela; o cálculo dos vizinhos é uma função pura testada.
           </p>
           <div class="tabela">
             <table>
@@ -461,15 +461,25 @@ docs/            Esta documentação</code></pre>
               <tbody>
                 <tr>
                   <td>Mouse</td>
-                  <td>Passar o mouse (só em telas com <code>hover</code>).</td>
+                  <td>
+                    Passar por cima destaca; sair da grade apaga. Só em aparelhos com
+                    <code>hover</code>.
+                  </td>
                 </tr>
                 <tr>
                   <td>Toque</td>
-                  <td>Um toque liga ou desliga o destaque.</td>
+                  <td>
+                    Um toque liga; de novo no mesmo quadrado desliga; em outro, muda. Tocar fora da
+                    grade ou no vão entre os quadrados apaga. Rolar a página não liga.
+                  </td>
                 </tr>
                 <tr>
                   <td>Teclado</td>
-                  <td>Foco com <kbd>Tab</kbd> e navegação com as setas.</td>
+                  <td>
+                    <kbd>Tab</kbd> entra na grade (um só ponto de parada); setas, <kbd>Home</kbd> e
+                    <kbd>End</kbd> movem; <kbd>Esc</kbd> apaga. Atalhos com <kbd>Alt</kbd>,
+                    <kbd>Ctrl</kbd> ou <kbd>Shift</kbd> continuam com o navegador.
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -928,9 +938,10 @@ docs/            Esta documentação</code></pre>
             <span aria-hidden="true">✓</span>
             <p>
               <strong>Cuidados para não dar alarme falso</strong>
-              Uma ação suspensa ou desconhecida não pausa o Yahoo; um erro 401/403 comum (ex.:
-              proteção anti-robô) não é tratado como “exige pagamento”; e nomes de empresas como
-              “Plano &amp; Plano” não disparam o alerta de cobrança.
+              Uma ação suspensa ou desconhecida não pausa o Yahoo — nem um lote só com ações que ele
+              não conhece, que o Yahoo responde com 404; um erro 401/403 comum (ex.: proteção
+              anti-robô) não é tratado como “exige pagamento”; e nomes de empresas como “Plano &amp;
+              Plano” não disparam o alerta de cobrança.
             </p>
           </div>
 
@@ -1297,7 +1308,7 @@ docs/            Esta documentação</code></pre>
           <div class="cartoes">
             <div class="cartao">
               <span class="icone" aria-hidden="true">✓</span>
-              <h4>616 testes</h4>
+              <h4>686 testes</h4>
               <p>Regras, banco, rotas, APIs externas e tela.</p>
             </div>
             <div class="cartao">
@@ -1344,10 +1355,6 @@ docs/            Esta documentação</code></pre>
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>6</td>
-                  <td>Destaque do quadrado ativo e dos 4 vizinhos (mouse, toque e teclado).</td>
-                </tr>
                 <tr>
                   <td>7</td>
                   <td>Menu com a lista de ações e caixas de seleção (limite de 50).</td>
@@ -1461,7 +1468,7 @@ docs/            Esta documentação</code></pre>
         </section>
 
         <footer class="rodape">
-          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 5.</p>
+          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 6.</p>
         </footer>
       </main>
     </div>
