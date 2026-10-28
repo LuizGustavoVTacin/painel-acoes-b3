@@ -68,6 +68,7 @@ function agruparMilhares(digitos: string): string {
  * sem sinal e sem ponto flutuante: 123456 → "1.234,56"; -5 → "0,05".
  */
 export function formatarCentesimos(centesimos: number): string {
+  garantirInteiroSeguro(centesimos, 'centesimos', 'número de centésimos');
   const digitos = String(Math.abs(centesimos)).padStart(3, '0');
   return `${agruparMilhares(digitos.slice(0, -2))},${digitos.slice(-2)}`;
 }

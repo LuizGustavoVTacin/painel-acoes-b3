@@ -113,6 +113,10 @@ describe('formatarCentesimos', () => {
   ])('%s → "%s"', (centesimos, esperado) => {
     expect(formatarCentesimos(centesimos)).toBe(esperado);
   });
+
+  it.each([1.5, NaN, 1e21])('recusa %s', (centesimos) => {
+    expect(() => formatarCentesimos(centesimos)).toThrow(RangeError);
+  });
 });
 
 describe('formatarBRL', () => {
