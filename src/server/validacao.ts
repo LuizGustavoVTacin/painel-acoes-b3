@@ -2,7 +2,7 @@ import { ehDataISO, type DataISO } from '../shared/datas.js';
 import { normalizarTicker, type Ticker } from '../shared/ticker.js';
 import type { DadosTransacao } from './banco/transacoes.js';
 import { LIMITE_ACOES_SELECIONADAS } from './banco/migracoes.js';
-import { ErroNaoEncontrado, ErroValidacao } from './erros.js';
+import { ErroValidacao } from './erros.js';
 
 export const QUANTIDADE_MAXIMA = 1_000_000_000;
 /** R$ 1.000.000,00 por ação. */
@@ -100,9 +100,8 @@ export function validarSelecao(corpo: unknown): Ticker[] {
   return [...tickers];
 }
 
-/** Converte o :id da rota em número; ids malformados contam como inexistentes. */
-export function lerId(texto: string): number {
+/** Converte o :id da rota em número; null se o texto não for um id possível. */
+export function lerId(texto: string): number | null {
   const id = /^[1-9]\d{0,15}$/.test(texto) ? Number(texto) : NaN;
-  if (!Number.isSafeInteger(id)) throw new ErroNaoEncontrado('Transação não encontrada');
-  return id;
+  return Number.isSafeInteger(id) ? id : null;
 }

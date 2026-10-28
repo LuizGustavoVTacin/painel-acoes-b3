@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { hojeEmBrasilia } from '../shared/datas.js';
 import { calcularPosicao, type Posicao } from '../shared/posicao.js';
 import { normalizarTicker, type Ticker } from '../shared/ticker.js';
@@ -16,7 +16,13 @@ export interface DependenciasRotas {
 
 export function criarRotasTransacoes({ transacoes, agora }: DependenciasRotas): Router {
   const rotas = Router();
+  const validar = (corpo: unknown) => validarDadosTransacao(corpo, hojeEmBrasilia(agora()));
   const naoEncontrada = () => new ErroNaoEncontrado('Transação não encontrada');
+  const idDaRota = (texto: string) => {
+    const id = lerId(texto);
+    if (id === null) throw naoEncontrada();
+    return id;
+  };
 
   rotas.get('/', (req, res) => {
     const { ticker } = req.query;
@@ -30,20 +36,18 @@ export function criarRotasTransacoes({ transacoes, agora }: DependenciasRotas): 
   });
 
   rotas.post('/', (req, res) => {
-    const dados = validarDadosTransacao(req.body, hojeEmBrasilia(agora()));
+    const dados = validar(req.body);
     res.status(201).json({ transacao: transacoes.criar(dados) });
   });
 
   rotas.put('/:id', (req, res) => {
-    const id = lerId(req.params.id);
-    const dados = validarDadosTransacao(req.body, hojeEmBrasilia(agora()));
-    const transacao = transacoes.atualizar(id, dados);
+    const transacao = transacoes.atualizar(idDaRota(req.params.id), validar(req.body));
     if (!transacao) throw naoEncontrada();
     res.json({ transacao });
   });
 
   rotas.delete('/:id', (req, res) => {
-    if (!transacoes.excluir(lerId(req.params.id))) throw naoEncontrada();
+    if (!transacoes.excluir(idDaRota(req.params.id))) throw naoEncontrada();
     res.status(204).end();
   });
 
@@ -52,7 +56,7 @@ export function criarRotasTransacoes({ transacoes, agora }: DependenciasRotas): 
 
 export function criarRotasSelecao({ selecao }: DependenciasRotas): Router {
   const rotas = Router();
-  const responder = (res: { json: (corpo: unknown) => void }) =>
+  const responder = (res: Response) =>
     res.json({ tickers: selecao.listar(), limite: LIMITE_ACOES_SELECIONADAS });
 
   rotas.get('/', (_req, res) => responder(res));
