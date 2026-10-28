@@ -54,7 +54,7 @@ export function criarApp({ pastaCliente }: OpcoesApp = {}): Express {
   if (pastaCliente && existsSync(path.join(pastaCliente, 'index.html'))) {
     app.use(express.static(pastaCliente));
     // Rotas do frontend recebem o index.html; arquivos inexistentes (com extensão) dão 404.
-    app.get('*', (req, res, next) => {
+    app.get('/{*caminho}', (req, res, next) => {
       if (path.extname(req.path)) return next();
       res.sendFile(path.join(pastaCliente, 'index.html'));
     });
