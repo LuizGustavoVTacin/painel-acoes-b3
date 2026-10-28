@@ -92,13 +92,18 @@ export async function buscarListaBrapi(buscar: Buscar, agora: Date): Promise<Lis
   try {
     json = JSON.parse(texto);
   } catch {
-    throw mensagemDeCobranca(texto.slice(0, 2000)) ?? formatoAlterado('resposta não é JSON');
+    // Em páginas HTML (manutenção, anti-robô) só o texto visível conta, não atributos como
+    // "csrf-token".
+    const textoVisivel = texto.slice(0, 2000).replace(/<[^>]*>/g, ' ');
+    throw mensagemDeCobranca(textoVisivel) ?? formatoAlterado('resposta não é JSON');
   }
   try {
     return { itens: interpretarListaBrapi(json), avisoDeCobranca };
   } catch (erro) {
     // Só os campos de mensagem contam: nomes de empresas como "Plano & Plano" não são cobrança.
-    const { message, error } = (json ?? {}) as { message?: unknown; error?: unknown };
+    const { message, error } = (
+      typeof json === 'object' && json !== null ? json : { message: json }
+    ) as { message?: unknown; error?: unknown };
     const textoDoErro = [message, error].filter((v) => typeof v === 'string').join(' ');
     throw mensagemDeCobranca(textoDoErro) ?? erro;
   }

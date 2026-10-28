@@ -141,6 +141,21 @@ describe('buscarListaBrapi', () => {
     await expect(buscarListaBrapi(buscar, AGORA)).rejects.toMatchObject({ situacao: 'bloqueada' });
   });
 
+  it('JSON que é só um texto pedindo upgrade é bloqueio', async () => {
+    const { buscar } = criarFetchFalso({ [URL_LISTA_BRAPI]: json('Please upgrade your plan') });
+
+    await expect(buscarListaBrapi(buscar, AGORA)).rejects.toMatchObject({ situacao: 'bloqueada' });
+  });
+
+  it('página HTML com "csrf-token" num atributo não é alarme de pagamento', async () => {
+    const pagina = '<html><meta name="csrf-token" content="x"><p>Em manutenção</p></html>';
+    const { buscar } = criarFetchFalso({ [URL_LISTA_BRAPI]: new Response(pagina) });
+
+    await expect(buscarListaBrapi(buscar, AGORA)).rejects.toMatchObject({
+      situacao: 'formato_alterado',
+    });
+  });
+
   it('acusa formato alterado quando a resposta não é JSON', async () => {
     const { buscar } = criarFetchFalso({
       [URL_LISTA_BRAPI]: new Response('<html>manutenção</html>'),

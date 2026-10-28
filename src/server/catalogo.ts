@@ -21,6 +21,8 @@ const LIMITE_LOGO_BYTES = 200 * 1024;
 const TIPOS_DE_LOGO = new Set(['image/svg+xml', 'image/png']);
 /** Uma lista com menos da metade das ações já conhecidas indica corte ou mudança na API. */
 const FRACAO_MINIMA_DA_LISTA = 0.5;
+const FALHAS_DE_FORMATO_PARA_ALERTA = 5;
+const AVISO_FALHA_LOCAL = 'A brapi respondeu, mas o banco local não salvou os dados';
 const AVISO_DE_COBRANCA = `${MENSAGEM_COBRANCA} (aviso recebido junto com os dados)`;
 
 export interface AcaoCatalogo {
@@ -123,6 +125,10 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
 
   let atualizacaoEmAndamento: Promise<void> | null = null;
   let ultimaChamadaCatalogo: string | undefined;
+  /** Conferências de logo também em memória, para não repetir downloads se o banco falhar. */
+  const logosConferidosEm = new Map<Ticker, string>();
+  /** Logos seguidos com formato inesperado; vários indicam mudança no servidor de logos. */
+  let falhasDeFormatoSeguidas = 0;
   const logosEmAndamento = new Map<Ticker, Promise<void>>();
   const limitarDownloads = criarLimitador(DOWNLOADS_SIMULTANEOS);
 
@@ -175,11 +181,8 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
   async function atualizarCatalogo(): Promise<void> {
     const momento = agora();
     // A última chamada fica também em memória: se o banco não gravar o estado, a pausa vale.
-    const anterior = [estado.consultar('brapi')?.ultimaTentativa, ultimaChamadaCatalogo]
-      .filter((instante) => instante !== undefined)
-      .sort()
-      .at(-1);
-    if (!passou(INTERVALO_MINIMO_CATALOGO_MS, anterior, momento)) return;
+    const anteriores = [estado.consultar('brapi')?.ultimaTentativa, ultimaChamadaCatalogo];
+    if (!anteriores.every((t) => passou(INTERVALO_MINIMO_CATALOGO_MS, t, momento))) return;
     if (!estado.podeChamar('brapi', momento)) return;
 
     ultimaChamadaCatalogo = momento.toISOString();
@@ -187,7 +190,17 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
     try {
       const conhecidas = (contarItens.get() as { total: number }).total;
       const { itens, avisoDeCobranca } = await buscarListaBrapi(buscar, momento);
-      const gravados = salvarItens(itens, momento);
+      let gravados: number;
+      try {
+        gravados = salvarItens(itens, momento);
+      } catch (erro) {
+        // Problema do banco local, não da API: a brapi respondeu bem.
+        console.error('Não foi possível salvar o catálogo no banco:', erro);
+        semFalhar('registrar o sucesso da brapi', () =>
+          estado.registrarSucesso('brapi', momento, AVISO_FALHA_LOCAL),
+        );
+        return;
+      }
 
       const aviso = avisoDeCobranca
         ? AVISO_DE_COBRANCA
@@ -215,8 +228,10 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
       etag: salvo?.etag ?? null,
       verificadoEm: momento.toISOString(),
     };
-    const gravar = (linha: typeof manter) =>
+    const gravar = (linha: typeof manter) => {
+      logosConferidosEm.set(ticker, linha.verificadoEm);
       semFalhar(`salvar o logo de ${ticker}`, () => gravarLogo.run(linha));
+    };
 
     contarUso('brapi_icones', momento);
     try {
@@ -225,6 +240,7 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
         cabecalhos: salvo?.etag && salvo.conteudo ? { 'if-none-match': salvo.etag } : {},
         statusAceitos: [304, 404],
       });
+      falhasDeFormatoSeguidas = 0;
       semFalhar('registrar o sucesso dos logos', () =>
         estado.registrarSucesso(
           'brapi_icones',
@@ -249,6 +265,11 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
         // Problema deste logo (grande demais, status estranho): só ele espera até amanhã.
         console.warn(`Logo de ${ticker} ignorado: ${erro.message}`);
         gravar(manter);
+        // Vários logos seguidos assim indicam mudança no servidor: aí sim, avisa e pausa.
+        if (++falhasDeFormatoSeguidas >= FALHAS_DE_FORMATO_PARA_ALERTA) {
+          falhasDeFormatoSeguidas = 0;
+          registrarFalha('brapi_icones', erro, momento);
+        }
         return;
       }
       const temporaria = erro instanceof ErroFonte && erro.situacao === 'instavel';
@@ -306,7 +327,9 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
     async logo(ticker: Ticker): Promise<Logo | null> {
       const momento = agora();
       const salvo = buscarLogo.get(ticker) as LinhaLogo | undefined;
-      const vencido = passou(VALIDADE_LOGO_MS, salvo?.verificado_em, momento);
+      const vencido = [salvo?.verificado_em, logosConferidosEm.get(ticker)].every((t) =>
+        passou(VALIDADE_LOGO_MS, t, momento),
+      );
       const url = (buscarLogoUrl.get(ticker) as { logo_url: string | null } | undefined)?.logo_url;
 
       if (vencido && url && estado.podeChamar('brapi_icones', momento)) {

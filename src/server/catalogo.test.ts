@@ -575,7 +575,7 @@ describe('robustez (segunda revisão)', () => {
     );
   });
 
-  it('erro do banco que não é regra desfaz o catálogo inteiro e marca instabilidade', async () => {
+  it('erro do banco que não é regra desfaz o catálogo inteiro, sem culpar a API', async () => {
     const { catalogo, estado } = montar({ [URL_LISTA_BRAPI]: listaBrapi() });
     // abs() do menor inteiro estoura: erro comum do SQLite, não violação de regra.
     banco.exec(`CREATE TEMP TRIGGER estoura BEFORE INSERT ON catalogo
@@ -584,7 +584,10 @@ describe('robustez (segunda revisão)', () => {
     await catalogo.garantirAtualizado();
 
     expect(catalogo.listar()).toEqual([]);
-    expect(estado.consultar('brapi')?.situacao).toBe('instavel');
+    expect(estado.consultar('brapi')).toMatchObject({
+      situacao: 'ok',
+      mensagem: 'A brapi respondeu, mas o banco local não salvou os dados',
+    });
   });
 
   it('se o banco não grava o estado, a pausa de 15 minutos continua valendo', async () => {
@@ -707,5 +710,87 @@ describe('estado das fontes: datas e relógio', () => {
     estado.registrarFalha('brapi', new ErroFonte('bloqueada', 'pagar', 402), agora);
 
     expect(estado.podeChamar('brapi', new Date(agora.getTime() - 3 * HORA))).toBe(true);
+  });
+});
+
+describe('robustez (terceira revisão)', () => {
+  const logoDe = (ticker: string) => `https://icons.brapi.dev/icons/${ticker}.svg`;
+  const listaCom = (tickers: string[]) =>
+    json({ stocks: tickers.map((t) => ({ stock: t, name: t, close: 10, logo: logoDe(t) })) });
+
+  it.each(['brapi', 'brapi_icones'] as const)(
+    '%s bloqueada volta a ok quando a API se recupera depois de 24 h',
+    async (provedor) => {
+      const { catalogo, estado } = montar({
+        [URL_LISTA_BRAPI]:
+          provedor === 'brapi' ? [json({}, { status: 402 }), listaBrapi()] : listaBrapi(),
+        [URL_LOGO]: [json({}, { status: 402 }), svg()],
+      });
+      if (provedor === 'brapi') {
+        await catalogo.garantirAtualizado();
+      } else {
+        await catalogo.garantirAtualizado();
+        await catalogo.logo('BBAS3');
+      }
+      expect(estado.consultar(provedor)?.situacao).toBe('bloqueada');
+
+      avancar(24 * HORA);
+      await catalogo.garantirAtualizado();
+      await catalogo.logo('BBAS3');
+
+      expect(estado.consultar(provedor)).toMatchObject({ situacao: 'ok', proximaTentativa: null });
+    },
+  );
+
+  it('relógio atrasado com o banco sem gravar: a pausa em memória ainda vale', async () => {
+    const { catalogo, estado, requisicoes } = montar({ [URL_LISTA_BRAPI]: listaBrapi() });
+    await catalogo.garantirAtualizado(); // grava ultimaTentativa às 15:00 no banco
+    vi.spyOn(estado, 'registrarSucesso').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+    avancar(-45 * MINUTO); // relógio volta: 14:15
+    await catalogo.garantirAtualizado(); // chama (banco no futuro) e guarda 14:15 em memória
+
+    avancar(5 * MINUTO);
+    await catalogo.garantirAtualizado();
+
+    expect(requisicoes).toHaveLength(2);
+  });
+
+  it('vários logos seguidos com formato estranho avisam e pausam o servidor de logos', async () => {
+    const tickers = ['ABCD3', 'EFGH3', 'IJKL3', 'MNOP3', 'QRST3', 'UVWX3'];
+    const { catalogo, estado, requisicoes } = montar({
+      [URL_LISTA_BRAPI]: listaCom(tickers),
+      'https://icons.brapi.dev/': () => json({}, { status: 410 }),
+    });
+    await catalogo.garantirAtualizado();
+
+    for (const t of tickers) await catalogo.logo(t);
+
+    expect(estado.consultar('brapi_icones')?.situacao).toBe('formato_alterado');
+    expect(requisicoes.filter((r) => r.url.includes('icons'))).toHaveLength(5);
+  });
+
+  it('se o banco não grava o logo, não baixa de novo a cada pedido', async () => {
+    const { catalogo, requisicoes } = montar({
+      [URL_LISTA_BRAPI]: listaBrapi(),
+      [URL_LOGO]: svg(),
+    });
+    await catalogo.garantirAtualizado();
+    banco.exec(`CREATE TEMP TRIGGER sem_logo BEFORE INSERT ON logos
+      BEGIN SELECT RAISE(ABORT, 'disco cheio'); END`);
+
+    await catalogo.logo('BBAS3');
+    await catalogo.logo('BBAS3');
+
+    expect(requisicoes.filter((r) => r.url === URL_LOGO)).toHaveLength(1);
+  });
+
+  it('tolerância de 1 h no relógio: -59 min mantém o bloqueio, -61 min libera', () => {
+    const estado = criarEstadoFontes(banco);
+    estado.registrarFalha('brapi', new ErroFonte('bloqueada', 'pagar', 402), agora);
+
+    expect(estado.podeChamar('brapi', new Date(agora.getTime() - 59 * MINUTO))).toBe(false);
+    expect(estado.podeChamar('brapi', new Date(agora.getTime() - 61 * MINUTO))).toBe(true);
   });
 });
