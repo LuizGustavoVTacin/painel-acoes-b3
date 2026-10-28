@@ -64,6 +64,9 @@ export function validarDadosTransacao(corpo: unknown, hoje: DataISO): DadosTrans
   const tamanhoPlataforma = [...plataforma].length;
   if (tamanhoPlataforma === 0 || tamanhoPlataforma > TAMANHO_MAXIMO_PLATAFORMA) {
     campos.plataforma = `Informe a plataforma (até ${TAMANHO_MAXIMO_PLATAFORMA} caracteres)`;
+  } else if (!plataforma.isWellFormed() || /\p{Cc}/u.test(plataforma)) {
+    // Caracteres de controle (ex.: NUL) fazem o SQLite contar o tamanho de outro jeito.
+    campos.plataforma = 'A plataforma contém caracteres inválidos';
   }
 
   if (Object.keys(campos).length > 0) {
@@ -84,17 +87,17 @@ export function validarSelecao(corpo: unknown): Ticker[] {
   if (!ehObjeto(corpo) || !Array.isArray(corpo.tickers)) {
     throw new ErroValidacao('Envie a seleção como { "tickers": [...] }');
   }
-  const tickers: Ticker[] = [];
+  if (corpo.tickers.length > LIMITE_ACOES_SELECIONADAS) {
+    throw new ErroValidacao(`Selecione no máximo ${LIMITE_ACOES_SELECIONADAS} ações`);
+  }
+  const tickers = new Set<Ticker>();
   for (const item of corpo.tickers) {
     const ticker = typeof item === 'string' ? normalizarTicker(item) : null;
     if (!ticker) throw new ErroValidacao(`Código de ação inválido: ${JSON.stringify(item)}`);
-    if (tickers.includes(ticker)) throw new ErroValidacao(`Ação repetida na seleção: ${ticker}`);
-    tickers.push(ticker);
+    if (tickers.has(ticker)) throw new ErroValidacao(`Ação repetida na seleção: ${ticker}`);
+    tickers.add(ticker);
   }
-  if (tickers.length > LIMITE_ACOES_SELECIONADAS) {
-    throw new ErroValidacao(`Selecione no máximo ${LIMITE_ACOES_SELECIONADAS} ações`);
-  }
-  return tickers;
+  return [...tickers];
 }
 
 /** Converte o :id da rota em número; ids malformados contam como inexistentes. */

@@ -8,7 +8,9 @@ export function emTransacao<T>(banco: DatabaseSync, operacao: () => T): T {
     banco.exec('COMMIT');
     return resultado;
   } catch (erro) {
-    banco.exec('ROLLBACK');
+    // O SQLite pode já ter desfeito a transação sozinho (ex.: disco cheio); um ROLLBACK
+    // extra lançaria outro erro e esconderia a causa real.
+    if (banco.isTransaction) banco.exec('ROLLBACK');
     throw erro;
   }
 }

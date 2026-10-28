@@ -3,6 +3,7 @@
 *.db-wal
 *.db-shm
 *.db-journal
+*.db.bak-v*
 *.sqlite
 *.sqlite3
 

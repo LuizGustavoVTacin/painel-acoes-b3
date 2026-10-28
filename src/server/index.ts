@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { criarApp } from './app.js';
-import { abrirBanco } from './banco/conexao.js';
+import { abrirBanco, fecharBanco } from './banco/conexao.js';
 import { caminhoBanco, lerPorta, pastaClienteCompilado } from './config.js';
 
 const porta = lerPorta(process.env.PORT);
@@ -17,15 +17,15 @@ const servidor = criarApp({ banco, pastaCliente })
     } else {
       console.error(erro);
     }
-    banco.close();
+    fecharBanco(banco);
     process.exit(1);
   });
 
-// Fecha o banco ao encerrar (Ctrl+C), garantindo que tudo foi gravado no arquivo.
-for (const sinal of ['SIGINT', 'SIGTERM'] as const) {
+// Fecha o banco ao encerrar: Ctrl+C (SIGINT), kill (SIGTERM) ou fechar a janela no Windows (SIGHUP).
+for (const sinal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
   process.on(sinal, () => {
     servidor.close();
-    banco.close();
+    fecharBanco(banco);
     process.exit(0);
   });
 }

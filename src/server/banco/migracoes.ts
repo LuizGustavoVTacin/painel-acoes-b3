@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import { emTransacao } from './emTransacao.js';
 
@@ -49,21 +50,46 @@ const MIGRACOES: readonly string[] = [
 
 export const VERSAO_ATUAL = MIGRACOES.length;
 
-/** Aplica, em transação, as migrações que o banco ainda não tem. */
-export function aplicarMigracoes(banco: DatabaseSync): void {
-  const { user_version: versao } = banco.prepare('PRAGMA user_version').get() as {
-    user_version: number;
-  };
-  if (versao > VERSAO_ATUAL) {
+function lerVersao(banco: DatabaseSync): number {
+  return (banco.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+}
+
+function garantirVersaoSuportada(versao: number, versaoDoApp: number): void {
+  if (versao > versaoDoApp) {
     throw new Error(
-      `O banco está na versão ${versao}, mais nova que este app (${VERSAO_ATUAL}). Atualize o app.`,
+      `O banco está na versão ${versao}, mais nova que este app (${versaoDoApp}). Atualize o app.`,
     );
   }
+}
 
-  for (let indice = versao; indice < VERSAO_ATUAL; indice++) {
-    emTransacao(banco, () => {
-      banco.exec(MIGRACOES[indice]);
-      banco.exec(`PRAGMA user_version = ${indice + 1}`);
-    });
-  }
+/** Copia o banco para "<arquivo>.bak-v<versão>" antes de migrar dados que já existem. */
+function fazerBackup(banco: DatabaseSync, versao: number): void {
+  const arquivo = banco.location();
+  if (!arquivo) return; // banco em memória
+  const destino = `${arquivo}.bak-v${versao}`;
+  // Uma cópia desta versão já existe (ex.: migração anterior que falhou): mantém a original.
+  if (existsSync(destino)) return;
+  banco.prepare('VACUUM INTO ?').run(destino);
+}
+
+/**
+ * Aplica, numa única transação, as migrações que o banco ainda não tem.
+ * Se qualquer uma falhar, o banco fica exatamente como estava.
+ */
+export function aplicarMigracoes(banco: DatabaseSync, migracoes: readonly string[] = MIGRACOES) {
+  const versaoDoApp = migracoes.length;
+  const versao = lerVersao(banco);
+  garantirVersaoSuportada(versao, versaoDoApp);
+  if (versao === versaoDoApp) return;
+  if (versao > 0) fazerBackup(banco, versao);
+
+  emTransacao(banco, () => {
+    // Relida dentro da transação: outro processo pode ter migrado enquanto esperávamos o bloqueio.
+    const versaoAtual = lerVersao(banco);
+    garantirVersaoSuportada(versaoAtual, versaoDoApp);
+    for (let indice = versaoAtual; indice < versaoDoApp; indice++) {
+      banco.exec(migracoes[indice]);
+    }
+    banco.exec(`PRAGMA user_version = ${versaoDoApp}`);
+  });
 }

@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { abrirBanco, type Banco } from './conexao.js';
+import { abrirBanco, fecharBanco, type Banco } from './conexao.js';
 import { emTransacao } from './emTransacao.js';
-import { LIMITE_ACOES_SELECIONADAS, VERSAO_ATUAL } from './migracoes.js';
+import { aplicarMigracoes, LIMITE_ACOES_SELECIONADAS, VERSAO_ATUAL } from './migracoes.js';
 import { criarRepositorioSelecao } from './selecao.js';
 import { criarRepositorioTransacoes, type DadosTransacao } from './transacoes.js';
 import { criarRepositorioUsoApi } from './usoApi.js';
@@ -72,6 +73,45 @@ describe('migrações', () => {
     expect(criarRepositorioTransacoes(segundo).listar()).toHaveLength(1);
     expect(criarRepositorioSelecao(segundo).listar()).toEqual(['BBAS3', 'PETR4']);
     segundo.close();
+  });
+
+  it('faz backup do banco antes de aplicar migrações novas a dados existentes', () => {
+    const arquivo = path.join(pasta, 'dados.db');
+    const banco = new DatabaseSync(arquivo);
+    aplicarMigracoes(banco, ['CREATE TABLE t (x INTEGER) STRICT']);
+    banco.exec('INSERT INTO t VALUES (42)');
+
+    aplicarMigracoes(banco, ['CREATE TABLE t (x INTEGER) STRICT', 'ALTER TABLE t ADD y INTEGER']);
+    banco.close();
+
+    const backup = new DatabaseSync(`${arquivo}.bak-v1`);
+    expect(backup.prepare('SELECT * FROM t').all()).toEqual([{ x: 42 }]);
+    expect(backup.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 });
+    backup.close();
+  });
+
+  it('não faz backup de um banco novo (versão 0)', () => {
+    const arquivo = path.join(pasta, 'novo.db');
+    abrirBanco(arquivo).close();
+
+    expect(existsSync(`${arquivo}.bak-v0`)).toBe(false);
+  });
+
+  it('deixa o banco intacto se uma migração falhar', () => {
+    const banco = new DatabaseSync(':memory:');
+    aplicarMigracoes(banco, ['CREATE TABLE t (x INTEGER) STRICT']);
+
+    expect(() =>
+      aplicarMigracoes(banco, [
+        'CREATE TABLE t (x INTEGER) STRICT',
+        'CREATE TABLE nova (y INTEGER) STRICT',
+        'SINTAXE INVÁLIDA',
+      ]),
+    ).toThrow();
+    const tabelas = banco.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all();
+    expect(tabelas).toEqual([{ name: 't' }]);
+    expect(banco.prepare('PRAGMA user_version').get()).toEqual({ user_version: 1 });
+    banco.close();
   });
 
   it('recusa abrir um banco criado por uma versão mais nova do app', () => {
@@ -142,6 +182,39 @@ describe('emTransacao', () => {
     ).toThrow('falha no meio');
     expect(selecao.listar()).toEqual(['BBAS3']);
     expect(banco.isTransaction).toBe(false);
+  });
+
+  it('preserva o erro original quando o SQLite já desfez a transação sozinho', () => {
+    banco.exec('CREATE TEMP TABLE t (x INTEGER NOT NULL ON CONFLICT ROLLBACK)');
+
+    expect(() => emTransacao(banco, () => banco.exec('INSERT INTO t VALUES (NULL)'))).toThrow(
+      /NOT NULL constraint failed/,
+    );
+    expect(banco.isTransaction).toBe(false);
+  });
+});
+
+describe('fecharBanco', () => {
+  it('grava o WAL no arquivo principal e remove os arquivos auxiliares', () => {
+    const pasta = mkdtempSync(path.join(tmpdir(), 'dashboard-fechar-'));
+    try {
+      const arquivo = path.join(pasta, 'dados.db');
+      const aberto = abrirBanco(arquivo);
+      criarRepositorioSelecao(aberto).substituir(['BBAS3']);
+
+      fecharBanco(aberto);
+      fecharBanco(aberto); // fechar de novo não deve falhar
+
+      expect(aberto.isOpen).toBe(false);
+      expect(existsSync(`${arquivo}-wal`)).toBe(false);
+      const somenteArquivoPrincipal = new DatabaseSync(arquivo, { readOnly: true });
+      expect(
+        somenteArquivoPrincipal.prepare('SELECT ticker FROM acoes_selecionadas').all(),
+      ).toEqual([{ ticker: 'BBAS3' }]);
+      somenteArquivoPrincipal.close();
+    } finally {
+      rmSync(pasta, { recursive: true, force: true });
+    }
   });
 });
 

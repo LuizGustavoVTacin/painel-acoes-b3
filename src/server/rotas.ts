@@ -70,11 +70,18 @@ export function criarRotasPosicoes({ transacoes }: DependenciasRotas): Router {
 
   rotas.get('/', (_req, res) => {
     const posicoes: Record<Ticker, Posicao> = {};
+    const erros: Record<Ticker, string> = {};
     for (const [ticker, compras] of transacoes.comprasPorTicker()) {
-      const posicao = calcularPosicao(compras);
-      if (posicao) posicoes[ticker] = posicao;
+      // Uma ação com dados problemáticos não pode derrubar as posições das outras.
+      try {
+        const posicao = calcularPosicao(compras);
+        if (posicao) posicoes[ticker] = posicao;
+      } catch (erro) {
+        console.error(`Não foi possível calcular a posição de ${ticker}:`, erro);
+        erros[ticker] = 'Não foi possível calcular a posição desta ação';
+      }
     }
-    res.json({ posicoes });
+    res.json({ posicoes, erros });
   });
 
   return rotas;

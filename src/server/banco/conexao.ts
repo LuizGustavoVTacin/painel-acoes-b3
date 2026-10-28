@@ -18,3 +18,13 @@ export function abrirBanco(arquivo: string): Banco {
     throw erro;
   }
 }
+
+/**
+ * Fecha o banco gravando no arquivo principal tudo o que estava no WAL, para que
+ * dados.db fique completo mesmo que só ele seja copiado.
+ */
+export function fecharBanco(banco: Banco): void {
+  if (!banco.isOpen) return;
+  banco.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  banco.close();
+}

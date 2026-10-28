@@ -1,7 +1,7 @@
 import request from 'supertest';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarApp } from './app.js';
-import { abrirBanco } from './banco/conexao.js';
+import { abrirBanco, type Banco } from './banco/conexao.js';
 
 // 27/10/2026 às 22:30 em Brasília (já dia 28 em UTC).
 const AGORA = new Date('2026-10-28T01:30:00Z');
@@ -15,10 +15,12 @@ const compraValida = {
   plataforma: '  Itaú Íon ',
 };
 
+let banco: Banco;
 let app: ReturnType<typeof criarApp>;
 
 beforeEach(() => {
-  app = criarApp({ banco: abrirBanco(':memory:'), agora: () => AGORA });
+  banco = abrirBanco(':memory:');
+  app = criarApp({ banco, agora: () => AGORA });
 });
 
 const criarCompra = async (dados: Record<string, unknown> = {}) =>
@@ -240,10 +242,64 @@ describe('GET /api/posicoes', () => {
         BBAS3: { quantidadeTotal: 150, custoTotal: 165150, precoMedio: 1101 },
         PETR4: { quantidadeTotal: 10, custoTotal: 38000, precoMedio: 3800 },
       },
+      erros: {},
     });
   });
 
   it('não inclui ações sem compras', async () => {
-    expect((await request(app).get('/api/posicoes')).body).toEqual({ posicoes: {} });
+    expect((await request(app).get('/api/posicoes')).body).toEqual({ posicoes: {}, erros: {} });
+  });
+
+  it('uma ação com total impossível de calcular não derruba as outras', async () => {
+    await criarCompra({ ticker: 'BBAS3', quantidade: 10, precoUnitario: 1000, taxas: 0 });
+    // Cada compra é válida, mas a soma passa do limite de inteiros seguros.
+    const inserir = banco.prepare(
+      `INSERT INTO transacoes (ticker, data, quantidade, preco_unitario_centavos, taxas_centavos, plataforma)
+       VALUES ('PETR4', '2026-10-20', 100000, 100000000, 0, 'BTG')`,
+    );
+    for (let i = 0; i < 901; i++) inserir.run();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const resposta = await request(app).get('/api/posicoes');
+
+    expect(resposta.status).toBe(200);
+    expect(resposta.body.posicoes).toEqual({
+      BBAS3: { quantidadeTotal: 10, custoTotal: 10000, precoMedio: 1000 },
+    });
+    expect(resposta.body.erros).toEqual({
+      PETR4: 'Não foi possível calcular a posição desta ação',
+    });
+  });
+});
+
+describe('dados aceitos pela validação são aceitos pelo banco', () => {
+  it.each([
+    ['plataforma com acentos e emoji', { plataforma: 'Itaú Íon 🚀' }],
+    ['plataforma com 40 emojis', { plataforma: '🚀'.repeat(40) }],
+    [
+      'valores nos limites',
+      { quantidade: 1_000_000_000, precoUnitario: 9_000, taxas: 100_000_000 },
+    ],
+    ['preço mínimo e taxa zero', { precoUnitario: 1, taxas: 0 }],
+    ['ticker com 2 dígitos', { ticker: 'taee11' }],
+    ['data mais antiga possível', { data: '1900-01-01' }],
+  ])('%s', async (_caso, dados) => {
+    const resposta = await criarCompra(dados);
+
+    expect(resposta.status).toBe(201);
+  });
+
+  it.each([
+    ['caractere NUL no início', '\u0000abc'],
+    ['caractere NUL no meio', 'ab\u0000c'],
+    ['quebra de linha', 'BTG\nXP'],
+    ['surrogate isolado', 'BTG \ud800'],
+  ])('recusa plataforma com %s (400, não 500)', async (_caso, plataforma) => {
+    const resposta = await criarCompra({ plataforma });
+
+    expect(resposta.status).toBe(400);
+    expect(resposta.body.campos).toEqual({
+      plataforma: 'A plataforma contém caracteres inválidos',
+    });
   });
 });
