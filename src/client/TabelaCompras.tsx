@@ -34,6 +34,12 @@ export function TabelaCompras({
   const [excluindo, setExcluindo] = useState<number | null>(null);
   const [erro, setErro] = useState<{ id: number; mensagem: string } | null>(null);
 
+  /** Desiste da exclusão; o foco vai para o formulário (os botões da pergunta somem). */
+  function desistir(): void {
+    setConfirmando(null);
+    aoPerderFoco();
+  }
+
   async function excluir(id: number): Promise<void> {
     aoPerderFoco();
     setExcluindo(id);
@@ -54,116 +60,172 @@ export function TabelaCompras({
   }
 
   return (
-    <table className="tabela-compras">
-      <caption className="apenas-leitor">Compras registradas</caption>
-      <thead>
-        <tr>
-          <th scope="col">Data</th>
-          <th scope="col">Código</th>
-          <th scope="col">Quantidade</th>
-          <th scope="col">Preço unitário</th>
-          <th scope="col">Taxas</th>
-          <th scope="col">Total</th>
-          <th scope="col">Plataforma</th>
-          <th scope="col">
-            <span className="apenas-leitor">Ações</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {compras.map((compra) => {
-          const { id } = compra;
-          const descricao = `${compra.ticker} de ${formatarData(compra.data)}`;
-          return (
-            <tr key={id} className={id === idEditando ? 'compra-editando' : undefined}>
-              <td data-rotulo="Data">{formatarData(compra.data)}</td>
-              <td data-rotulo="Código" className="ticker">
-                {compra.ticker}
-              </td>
-              <td data-rotulo="Quantidade">{quantidade(compra.quantidade)}</td>
-              <td data-rotulo="Preço unitário">{formatarBRL(compra.precoUnitario)}</td>
-              <td data-rotulo="Taxas">{formatarBRL(compra.taxas)}</td>
-              <td data-rotulo="Total">{formatarBRL(totalDaCompra(compra))}</td>
-              <td data-rotulo="Plataforma">{compra.plataforma}</td>
-              <td className="compra-acoes">
-                {confirmando === id ? (
-                  <span role="group" aria-label={`Confirmar exclusão da compra de ${descricao}`}>
-                    <span>Excluir esta compra?</span>{' '}
-                    <button
-                      type="button"
-                      className="botao-perigo"
-                      disabled={excluindo !== null}
-                      onClick={() => void excluir(id)}
+    <div className="tabela-rolagem">
+      <table className="tabela-compras" role="table">
+        <caption className="apenas-leitor">Compras registradas</caption>
+        <thead role="rowgroup">
+          <tr role="row">
+            <th scope="col" role="columnheader">
+              Data
+            </th>
+            <th scope="col" role="columnheader">
+              Código
+            </th>
+            <th scope="col" role="columnheader">
+              Quantidade
+            </th>
+            <th scope="col" role="columnheader">
+              Preço unitário
+            </th>
+            <th scope="col" role="columnheader">
+              Taxas
+            </th>
+            <th scope="col" role="columnheader">
+              Total
+            </th>
+            <th scope="col" role="columnheader">
+              Plataforma
+            </th>
+            <th scope="col" role="columnheader">
+              <span className="apenas-leitor">Ações</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody role="rowgroup">
+          {compras.map((compra) => {
+            const { id } = compra;
+            const descricao = `${compra.ticker} de ${formatarData(compra.data)}`;
+            return (
+              <tr role="row" key={id} className={id === idEditando ? 'compra-editando' : undefined}>
+                <td role="cell" data-rotulo="Data">
+                  {formatarData(compra.data)}
+                </td>
+                <td role="cell" data-rotulo="Código" className="ticker">
+                  {compra.ticker}
+                </td>
+                <td role="cell" data-rotulo="Quantidade">
+                  {quantidade(compra.quantidade)}
+                </td>
+                <td role="cell" data-rotulo="Preço unitário">
+                  {formatarBRL(compra.precoUnitario)}
+                </td>
+                <td role="cell" data-rotulo="Taxas">
+                  {formatarBRL(compra.taxas)}
+                </td>
+                <td role="cell" data-rotulo="Total">
+                  {formatarBRL(totalDaCompra(compra))}
+                </td>
+                <td role="cell" data-rotulo="Plataforma">
+                  {compra.plataforma}
+                </td>
+                <td role="cell" className="compra-acoes">
+                  {confirmando === id ? (
+                    <span
+                      role="group"
+                      aria-label={`Confirmar exclusão da compra de ${descricao}`}
+                      onKeyDown={(evento) => {
+                        // Esc desiste só da exclusão; não fecha o painel.
+                        if (evento.key === 'Escape' && excluindo === null) {
+                          evento.preventDefault();
+                          desistir();
+                        }
+                      }}
                     >
-                      {excluindo === id ? 'Excluindo…' : 'Sim, excluir'}
-                    </button>{' '}
-                    <button
-                      type="button"
-                      disabled={excluindo !== null}
-                      onClick={() => setConfirmando(null)}
-                    >
-                      Não
-                    </button>
-                  </span>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      aria-label={`Editar a compra de ${descricao}`}
-                      disabled={travado}
-                      onClick={() => aoEditar(compra)}
-                    >
-                      Editar
-                    </button>{' '}
-                    <button
-                      type="button"
-                      aria-label={`Excluir a compra de ${descricao}`}
-                      disabled={travado}
-                      onClick={() => setConfirmando(id)}
-                    >
-                      Excluir
-                    </button>
-                  </>
-                )}
-                {erro?.id === id && (
-                  <p role="alert" className="campo-erro">
-                    {erro.mensagem}
-                  </p>
-                )}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+                      <span>Excluir esta compra?</span>{' '}
+                      <button
+                        type="button"
+                        className="botao-perigo"
+                        disabled={excluindo !== null}
+                        onClick={() => void excluir(id)}
+                      >
+                        {excluindo === id ? 'Excluindo…' : 'Sim, excluir'}
+                      </button>{' '}
+                      <button
+                        type="button"
+                        // O botão "Excluir" sumiu; o foco vai para a opção segura.
+                        autoFocus
+                        disabled={excluindo !== null}
+                        onClick={desistir}
+                      >
+                        Não
+                      </button>
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        aria-label={`Editar a compra de ${descricao}`}
+                        disabled={travado}
+                        onClick={() => aoEditar(compra)}
+                      >
+                        Editar
+                      </button>{' '}
+                      <button
+                        type="button"
+                        aria-label={`Excluir a compra de ${descricao}`}
+                        disabled={travado}
+                        onClick={() => setConfirmando(id)}
+                      >
+                        Excluir
+                      </button>
+                    </>
+                  )}
+                  {erro?.id === id && (
+                    <p role="alert" className="campo-erro">
+                      {erro.mensagem}
+                    </p>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 /** Quantidade total e preço médio de cada ação comprada. */
 export function ResumoCompras({ resumo }: { resumo: readonly ResumoAcao[] }) {
   return (
-    <table className="tabela-compras tabela-resumo">
-      <caption>Resumo por ação</caption>
-      <thead>
-        <tr>
-          <th scope="col">Código</th>
-          <th scope="col">Quantidade</th>
-          <th scope="col">Preço médio</th>
-          <th scope="col">Total investido</th>
-        </tr>
-      </thead>
-      <tbody>
-        {resumo.map(({ ticker, quantidadeTotal, precoMedio, custoTotal }) => (
-          <tr key={ticker}>
-            <td data-rotulo="Código" className="ticker">
-              {ticker}
-            </td>
-            <td data-rotulo="Quantidade">{quantidade(quantidadeTotal)}</td>
-            <td data-rotulo="Preço médio">{formatarBRL(precoMedio)}</td>
-            <td data-rotulo="Total investido">{formatarBRL(custoTotal)}</td>
+    <div className="tabela-rolagem">
+      <table className="tabela-compras tabela-resumo" role="table">
+        <caption>Resumo por ação</caption>
+        <thead role="rowgroup">
+          <tr role="row">
+            <th scope="col" role="columnheader">
+              Código
+            </th>
+            <th scope="col" role="columnheader">
+              Quantidade
+            </th>
+            <th scope="col" role="columnheader">
+              Preço médio
+            </th>
+            <th scope="col" role="columnheader">
+              Total investido
+            </th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody role="rowgroup">
+          {resumo.map(({ ticker, quantidadeTotal, precoMedio, custoTotal }) => (
+            <tr role="row" key={ticker}>
+              <td role="cell" data-rotulo="Código" className="ticker">
+                {ticker}
+              </td>
+              <td role="cell" data-rotulo="Quantidade">
+                {quantidade(quantidadeTotal)}
+              </td>
+              <td role="cell" data-rotulo="Preço médio">
+                {formatarBRL(precoMedio)}
+              </td>
+              <td role="cell" data-rotulo="Total investido">
+                {formatarBRL(custoTotal)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

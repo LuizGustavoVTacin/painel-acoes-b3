@@ -23,6 +23,8 @@ export class ErroApi extends Error {
     mensagem: string,
     /** Mensagem por campo do formulário, quando o servidor recusou dados digitados. */
     readonly campos: ErrosDeCampo = {},
+    /** Status HTTP da recusa, quando o servidor respondeu (ex.: 404 = não existe mais). */
+    readonly status?: number,
   ) {
     super(mensagem);
     this.name = 'ErroApi';
@@ -150,6 +152,7 @@ async function recusaDoServidor(resposta: Response): Promise<ErroApi | null> {
     return null;
   }
   if (!ehObjeto(corpo) || typeof corpo.erro !== 'string') return null;
+  const { status } = resposta;
   const campos: ErrosDeCampo = {};
   if (ehObjeto(corpo.campos)) {
     for (const [campo, mensagem] of Object.entries(corpo.campos)) {
@@ -158,7 +161,7 @@ async function recusaDoServidor(resposta: Response): Promise<ErroApi | null> {
       }
     }
   }
-  return new ErroApi(corpo.erro, campos);
+  return new ErroApi(corpo.erro, campos, status);
 }
 
 /**
@@ -179,7 +182,14 @@ async function pedir(endereco: string, opcoes: RequestInit = {}): Promise<Respon
   }
   if (!resposta.ok) {
     const recusa = resposta.status < 500 ? await recusaDoServidor(resposta) : null;
-    throw recusa ?? new ErroApi(`O servidor do dashboard respondeu com erro (${resposta.status})`);
+    throw (
+      recusa ??
+      new ErroApi(
+        `O servidor do dashboard respondeu com erro (${resposta.status})`,
+        {},
+        resposta.status,
+      )
+    );
   }
   return resposta;
 }

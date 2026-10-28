@@ -2,6 +2,7 @@ import { useEffect, useId, useState, type FormEvent, type RefObject } from 'reac
 import { hojeEmBrasilia } from '../shared/datas';
 import { formatarBRL } from '../shared/dinheiro';
 import type { AcaoCatalogo } from '../shared/selecao';
+import { normalizarTicker } from '../shared/ticker';
 import type { CampoTransacao, DadosTransacao, ErrosDeCampo } from '../shared/transacao';
 import { ErroApi } from './api';
 import { lerCompra, totalDigitado, type TextoCompra } from './regrasCompra';
@@ -14,6 +15,8 @@ interface PropsFormulario {
   /** Primeiro campo; recebe o foco ao abrir e ao recomeçar o formulário. */
   campoTicker: RefObject<HTMLInputElement | null>;
   sugestoesTicker: readonly AcaoCatalogo[];
+  /** Códigos da lista da B3, para avisar de um provável erro de digitação; null se indisponível. */
+  codigosConhecidos: ReadonlySet<string> | null;
   sugestoesPlataforma: readonly string[];
   /** Grava a compra; um ErroApi com campos marca cada campo recusado pelo servidor. */
   aoEnviar: (dados: DadosTransacao) => Promise<void>;
@@ -35,6 +38,8 @@ interface PropsCampo {
   rotulo: string;
   valor: string;
   erro?: string;
+  /** Observação que não impede o envio (ex.: código fora da lista da B3). */
+  nota?: string;
   idBase: string;
   aoMudar: (valor: string) => void;
   travado: boolean;
@@ -49,6 +54,7 @@ function Campo({
   rotulo,
   valor,
   erro,
+  nota,
   idBase,
   aoMudar,
   travado,
@@ -58,6 +64,7 @@ function Campo({
   campoRef,
 }: PropsCampo) {
   const id = `${idBase}-${nome}`;
+  const descricoes = [erro && `${id}-erro`, nota && `${id}-nota`].filter(Boolean).join(' ');
   return (
     <div className="campo">
       <label htmlFor={id}>{rotulo}</label>
@@ -72,12 +79,17 @@ function Campo({
         autoComplete="off"
         readOnly={travado}
         aria-invalid={erro ? true : undefined}
-        aria-describedby={erro ? `${id}-erro` : undefined}
+        aria-describedby={descricoes || undefined}
         onChange={(evento) => aoMudar(evento.target.value)}
       />
       {erro && (
         <p id={`${id}-erro`} className="campo-erro">
           {erro}
+        </p>
+      )}
+      {nota && (
+        <p id={`${id}-nota`} className="campo-nota">
+          {nota}
         </p>
       )}
     </div>
@@ -90,6 +102,7 @@ export function FormularioCompra({
   editando,
   campoTicker,
   sugestoesTicker,
+  codigosConhecidos,
   sugestoesPlataforma,
   aoEnviar,
   aoCancelarEdicao,
@@ -146,6 +159,8 @@ export function FormularioCompra({
   }
 
   const total = totalDigitado(texto);
+  const codigo = normalizarTicker(texto.ticker);
+  const codigoDesconhecido = codigo !== null && codigosConhecidos?.has(codigo) === false;
   const idTickers = `${idBase}-tickers`;
   const idPlataformas = `${idBase}-plataformas`;
   const comum = { idBase, travado: enviando };
@@ -165,6 +180,11 @@ export function FormularioCompra({
           dica="BBAS3"
           valor={texto.ticker}
           erro={erros.ticker}
+          nota={
+            codigoDesconhecido && !erros.ticker
+              ? 'Este código não está na lista de ações da B3; confira antes de registrar'
+              : undefined
+          }
           lista={idTickers}
           campoRef={campoTicker}
           aoMudar={(valor) => mudar('ticker', valor.toUpperCase())}

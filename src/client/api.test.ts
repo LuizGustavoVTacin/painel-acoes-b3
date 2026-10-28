@@ -238,9 +238,9 @@ describe('catálogo e seleção no servidor', () => {
       vi.fn(async () => Response.json({ erro: 'Selecione no máximo 50 ações' }, { status: 400 })),
     );
 
-    await expect(salvarSelecao(['BBAS3'])).rejects.toThrow(
-      new ErroApi('Selecione no máximo 50 ações'),
-    );
+    const erro = await salvarSelecao(['BBAS3']).catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(ErroApi);
+    expect(erro).toMatchObject({ message: 'Selecione no máximo 50 ações', status: 400 });
   });
 
   it('recusa sem motivo legível usa a mensagem genérica', async () => {
@@ -352,7 +352,9 @@ describe('compras no servidor', () => {
       'fetch',
       vi.fn(async () => Response.json({ erro: 'Transação não encontrada' }, { status: 404 })),
     );
-    await expect(excluirTransacao(7)).rejects.toThrow(new ErroApi('Transação não encontrada'));
+    const erro = await excluirTransacao(7).catch((e: unknown) => e);
+    expect(erro).toBeInstanceOf(ErroApi);
+    expect(erro).toMatchObject({ message: 'Transação não encontrada', status: 404 });
   });
 
   it('recusa com erros por campo traz cada mensagem, ignorando campos desconhecidos', async () => {

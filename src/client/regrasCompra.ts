@@ -107,18 +107,30 @@ export function totalDigitado(texto: TextoCompra): Centavos | null {
   return Number.isSafeInteger(total) ? total : null;
 }
 
-/** Mesma ordem do servidor: data mais recente primeiro; no mesmo dia, a registrada por último. */
-export function ordenarCompras(compras: readonly Transacao[]): Transacao[] {
-  return [...compras].sort((a, b) => (a.data === b.data ? b.id - a.id : a.data < b.data ? 1 : -1));
-}
-
-/** Plataformas para sugerir: as já usadas (mais frequentes primeiro) e depois as padrão. */
+/**
+ * Plataformas para sugerir: as já usadas (mais frequentes primeiro) e depois as padrão.
+ * Grafias que só diferem em maiúsculas contam como uma; vale a mais usada.
+ */
 export function sugerirPlataformas(compras: readonly Transacao[]): string[] {
-  const contagem = new Map<string, number>();
-  for (const { plataforma } of compras)
+  const chave = (plataforma: string) => plataforma.toLocaleLowerCase('pt-BR');
+  const grafias = new Map<string, Map<string, number>>();
+  for (const { plataforma } of compras) {
+    const contagem = grafias.get(chave(plataforma)) ?? new Map<string, number>();
     contagem.set(plataforma, (contagem.get(plataforma) ?? 0) + 1);
-  const usadas = [...contagem].sort((a, b) => b[1] - a[1]).map(([plataforma]) => plataforma);
-  return [...new Set([...usadas, ...PLATAFORMAS_SUGERIDAS])];
+    grafias.set(chave(plataforma), contagem);
+  }
+  const usadas = [...grafias.values()]
+    .map((contagem) => {
+      const [grafia] = [...contagem].sort((a, b) => b[1] - a[1])[0];
+      const total = [...contagem.values()].reduce((soma, n) => soma + n, 0);
+      return { grafia, total };
+    })
+    .sort((a, b) => b.total - a.total);
+  const conhecidas = new Set(usadas.map(({ grafia }) => chave(grafia)));
+  return [
+    ...usadas.map(({ grafia }) => grafia),
+    ...PLATAFORMAS_SUGERIDAS.filter((plataforma) => !conhecidas.has(chave(plataforma))),
+  ];
 }
 
 export interface ResumoAcao extends Posicao {
@@ -134,7 +146,13 @@ export function resumirPorAcao(compras: readonly Transacao[]): ResumoAcao[] {
   return [...porAcao]
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .flatMap(([ticker, lista]) => {
-      const posicao = calcularPosicao(lista);
-      return posicao ? [{ ticker, ...posicao }] : [];
+      // Uma ação com valores fora do limite não pode derrubar o painel inteiro.
+      try {
+        const posicao = calcularPosicao(lista);
+        return posicao ? [{ ticker, ...posicao }] : [];
+      } catch (erro) {
+        console.error(`Não foi possível resumir as compras de ${ticker}:`, erro);
+        return [];
+      }
     });
 }

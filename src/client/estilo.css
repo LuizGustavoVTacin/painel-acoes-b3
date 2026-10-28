@@ -504,6 +504,12 @@ button {
   font-size: 13px;
 }
 
+.campo-nota {
+  margin: 0;
+  color: var(--atencao);
+  font-size: 13px;
+}
+
 .formulario-total {
   margin: 0;
   font-variant-numeric: tabular-nums;
@@ -575,8 +581,13 @@ button {
   white-space: nowrap;
 }
 
+/* Se a tabela não couber, ela rola de lado dentro do painel (a página não). */
+.tabela-rolagem {
+  overflow-x: auto;
+}
+
 /* Em telas estreitas cada linha vira um cartão com o rótulo antes do valor. */
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   .tabela-compras thead {
     position: absolute;
     width: 1px;

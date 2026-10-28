@@ -24,19 +24,18 @@ export async function comTempoLimite<T>(
 }
 
 /**
- * Carrega dados do servidor local uma vez, com tempo limite. Devolve a carga, uma função que
- * tenta de novo só se a última tentativa falhou, e outra que recarrega mesmo o que já carregou.
+ * Carrega dados do servidor local, com tempo limite. Devolve a carga, uma função que tenta de
+ * novo (só se a última tentativa falhou) e outra que busca de novo mantendo na tela os dados
+ * atuais até a resposta chegar. Uma busca nova cancela a anterior: vale sempre a mais recente.
  */
 export function useCarga<T>(
   buscar: (signal: AbortSignal) => Promise<T>,
   tempoLimiteMs: number,
 ): [Carga<T>, () => void, () => void] {
   const [carga, setCarga] = useState<Carga<T>>({ situacao: 'carregando' });
-  const [tentativa, setTentativa] = useState(0);
-  const carregou = carga.situacao === 'ok';
+  const [pedido, setPedido] = useState(0);
 
   useEffect(() => {
-    if (carregou) return;
     let ativo = true;
     const controle = new AbortController();
     comTempoLimite(buscar, controle, tempoLimiteMs).then(
@@ -51,15 +50,16 @@ export function useCarga<T>(
       ativo = false;
       controle.abort();
     };
-  }, [buscar, tentativa, carregou, tempoLimiteMs]);
+  }, [buscar, pedido, tempoLimiteMs]);
 
   function recarregar(): void {
-    setCarga({ situacao: 'carregando' });
-    setTentativa((n) => n + 1);
+    setPedido((n) => n + 1);
   }
 
   function tentarDeNovo(): void {
-    if (carga.situacao === 'erro') recarregar();
+    if (carga.situacao !== 'erro') return;
+    setCarga({ situacao: 'carregando' });
+    recarregar();
   }
 
   return [carga, tentarDeNovo, recarregar];

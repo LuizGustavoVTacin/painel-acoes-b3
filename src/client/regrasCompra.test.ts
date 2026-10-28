@@ -1,9 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Transacao } from '../shared/transacao';
 import {
   compraEmBranco,
   lerCompra,
-  ordenarCompras,
   resumirPorAcao,
   sugerirPlataformas,
   textoDaCompra,
@@ -146,17 +145,6 @@ describe('totalDigitado', () => {
   });
 });
 
-describe('ordenarCompras', () => {
-  it('data mais recente primeiro; no mesmo dia, o maior id primeiro', () => {
-    const lista = [
-      compra(1, { data: '2026-10-01' }),
-      compra(2, { data: '2026-10-20' }),
-      compra(3, { data: '2026-10-01' }),
-    ];
-    expect(ordenarCompras(lista).map((c) => c.id)).toEqual([2, 3, 1]);
-  });
-});
-
 describe('sugerirPlataformas', () => {
   it('as mais usadas primeiro, depois as padrão, sem repetir', () => {
     const lista = [
@@ -165,6 +153,16 @@ describe('sugerirPlataformas', () => {
       compra(3, { plataforma: 'XP' }),
     ];
     expect(sugerirPlataformas(lista)).toEqual(['XP', 'BTG', 'Itaú Íon']);
+  });
+
+  it('grafias que só diferem em maiúsculas viram uma (a mais usada)', () => {
+    const lista = [
+      compra(1, { plataforma: 'btg' }),
+      compra(2, { plataforma: 'BTG' }),
+      compra(3, { plataforma: 'BTG' }),
+      compra(4, { plataforma: 'itaú íon' }),
+    ];
+    expect(sugerirPlataformas(lista)).toEqual(['BTG', 'itaú íon']);
   });
 
   it('sem compras, só as padrão', () => {
@@ -183,5 +181,12 @@ describe('resumirPorAcao', () => {
       { ticker: 'BBAS3', quantidadeTotal: 200, custoTotal: 300200, precoMedio: 1501 },
       { ticker: 'PETR4', quantidadeTotal: 10, custoTotal: 50000, precoMedio: 5000 },
     ]);
+  });
+
+  it('ação cuja conta estoura os limites fica de fora, sem derrubar as outras', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const enorme = { quantidade: 1_000_000_000, precoUnitario: 100_000_000, taxas: 0 };
+    const lista = [compra(1, enorme), compra(2, enorme), compra(3, { ticker: 'PETR4' })];
+    expect(resumirPorAcao(lista).map((r) => r.ticker)).toEqual(['PETR4']);
   });
 });

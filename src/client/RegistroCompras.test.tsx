@@ -19,6 +19,8 @@ const compra = (id: number, extra: Partial<Transacao> = {}): Transacao => ({
 });
 
 type Recusa = () => Response | Promise<Response>;
+/** Resposta da listagem; null usa a lista em memória. */
+type Listagem = () => Response | null;
 
 /** Resposta que nunca chega; só termina (com erro) se o pedido for cancelado. */
 function nuncaResponde(signal?: AbortSignal | null): Promise<Response> {
@@ -32,9 +34,10 @@ function simularServidor(
   opcoes: {
     compras?: Transacao[];
     selecao?: string[];
-    listar?: Recusa;
+    listar?: Listagem;
     gravar?: Recusa;
     excluir?: Recusa;
+    catalogo?: string[];
     travarGravacao?: boolean;
   } = {},
 ) {
@@ -49,11 +52,9 @@ function simularServidor(
     pedidos.push({ metodo, endereco, corpo });
 
     if (endereco === '/api/catalogo') {
+      const codigos = opcoes.catalogo ?? ['BBAS3', 'PETR4'];
       return Response.json({
-        acoes: [
-          { ticker: 'BBAS3', nome: 'Banco do Brasil' },
-          { ticker: 'PETR4', nome: 'Petrobras' },
-        ],
+        acoes: codigos.map((ticker) => ({ ticker, nome: `Empresa ${ticker}` })),
       });
     }
     if (endereco === '/api/selecao') {
@@ -61,8 +62,13 @@ function simularServidor(
       return Response.json({ tickers: selecao, limite: 50 });
     }
     if (endereco === '/api/transacoes' && metodo === 'GET') {
-      if (opcoes.listar) return opcoes.listar();
-      return Response.json({ transacoes: compras });
+      const resposta = opcoes.listar?.();
+      if (resposta) return resposta;
+      // Como o servidor real: data mais recente primeiro; no mesmo dia, o maior id.
+      const ordenadas = [...compras].sort((a, b) =>
+        a.data === b.data ? b.id - a.id : a.data < b.data ? 1 : -1,
+      );
+      return Response.json({ transacoes: ordenadas });
     }
     if (metodo === 'POST' || metodo === 'PUT') {
       if (opcoes.travarGravacao) return nuncaResponde(init.signal);
@@ -81,7 +87,14 @@ function simularServidor(
     return new Response('não encontrado', { status: 404 });
   });
   vi.stubGlobal('fetch', fetchFalso);
-  return { pedidos, gravacoes: () => pedidos.filter((p) => p.metodo !== 'GET') };
+  return {
+    pedidos,
+    gravacoes: () => pedidos.filter((p) => p.metodo !== 'GET'),
+    /** Apaga direto no servidor, como se fosse outra aba. */
+    apagar: (id: number) => {
+      compras = compras.filter((c) => c.id !== id);
+    },
+  };
 }
 
 function campo(rotulo: string) {
@@ -317,15 +330,120 @@ describe('RegistroCompras', () => {
 
   it('falha ao excluir mostra o motivo na linha e mantém a compra', async () => {
     simularServidor({
-      excluir: () => Response.json({ erro: 'Transação não encontrada' }, { status: 404 }),
+      excluir: () => Response.json({ erro: 'Exclusão recusada' }, { status: 400 }),
     });
     await abrirPainel();
 
     fireEvent.click(screen.getByRole('button', { name: /Excluir a compra/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Sim, excluir' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Transação não encontrada');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Exclusão recusada');
     expect(linhas()).toHaveLength(1);
+  });
+
+  it('excluir compra que já não existe (404) só tira a linha da tela', async () => {
+    const servidor = simularServidor({
+      compras: [compra(1), compra(2, { ticker: 'VALE3' })],
+      excluir: () => {
+        servidor.apagar(2);
+        return Response.json({ erro: 'Transação não encontrada' }, { status: 404 });
+      },
+    });
+    await abrirPainel();
+
+    fireEvent.click(screen.getByRole('button', { name: /Excluir a compra de VALE3/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, excluir' }));
+
+    await waitFor(() => expect(linhas()).toHaveLength(1));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('editar compra que já não existe (404) sai da edição e avisa', async () => {
+    const servidor = simularServidor({
+      compras: [compra(1), compra(2, { ticker: 'VALE3' })],
+      gravar: () => {
+        servidor.apagar(2);
+        return Response.json({ erro: 'Transação não encontrada' }, { status: 404 });
+      },
+    });
+    await abrirPainel();
+
+    fireEvent.click(screen.getByRole('button', { name: /Editar a compra de VALE3/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+
+    expect(
+      await screen.findByText(/A compra que você editava não existe mais/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Registrar compras' })).toBeInTheDocument();
+    await waitFor(() => expect(linhas()).toHaveLength(1));
+  });
+
+  it('Esc na pergunta de exclusão desiste só dela; o foco fica no painel', async () => {
+    const aoFechar = vi.fn();
+    simularServidor();
+    await abrirPainel({ aoFechar });
+
+    fireEvent.click(screen.getByRole('button', { name: /Excluir a compra/ }));
+    const nao = screen.getByRole('button', { name: 'Não' });
+    expect(nao).toHaveFocus();
+
+    fireEvent.keyDown(nao, { key: 'Escape' });
+
+    expect(screen.queryByText('Excluir esta compra?')).not.toBeInTheDocument();
+    expect(aoFechar).not.toHaveBeenCalled();
+    expect(campo('Código')).toHaveFocus();
+  });
+
+  it('código fora da lista da B3: avisa no campo e depois, sem oferecer a grade', async () => {
+    simularServidor({ catalogo: ['PETR4'] });
+    await abrirPainel();
+    const sugestoes = () => document.getElementById(campo('Código').getAttribute('list')!)!;
+    await waitFor(() => expect(sugestoes().querySelectorAll('option')).toHaveLength(1));
+
+    preencher({ ...compraBBAS3, Código: 'bbsa3' });
+    expect(campo('Código')).toHaveAccessibleDescription(
+      'Este código não está na lista de ações da B3; confira antes de registrar',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar compra' }));
+
+    expect(
+      await screen.findByText(/BBSA3 foi registrada, mas não está na lista/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Adicionar à grade' })).not.toBeInTheDocument();
+  });
+
+  it('lista que não carregou: registrar uma compra busca a lista completa de novo', async () => {
+    let falhar = true;
+    simularServidor({
+      compras: [compra(1), compra(2, { ticker: 'VALE3' })],
+      listar: () => (falhar ? new Response('erro', { status: 500 }) : null),
+    });
+    render(<RegistroCompras aoFechar={() => {}} aoMudarGrade={() => {}} />);
+    await screen.findByText(/Não foi possível carregar as compras/);
+
+    falhar = false;
+    preencher(compraBBAS3);
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar compra' }));
+
+    await waitFor(() => expect(linhas()).toHaveLength(3));
+  });
+
+  it('"Adicionar à grade" relê a seleção antes de gravar', async () => {
+    const { gravacoes } = simularServidor({ selecao: ['PETR4'] });
+    await abrirPainel();
+    preencher(compraBBAS3);
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar compra' }));
+    await screen.findByText('BBAS3 não está na grade.');
+
+    // Outra aba mudou a grade enquanto o painel estava aberto.
+    await fetch('/api/selecao', {
+      method: 'PUT',
+      body: JSON.stringify({ tickers: ['PETR4', 'VALE3'] }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar à grade' }));
+
+    await screen.findByText('BBAS3 foi adicionada à grade.');
+    expect(gravacoes().at(-1)).toMatchObject({ corpo: { tickers: ['PETR4', 'VALE3', 'BBAS3'] } });
   });
 
   it('filtra a lista e o resumo pelo código', async () => {
