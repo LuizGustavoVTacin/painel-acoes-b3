@@ -8,13 +8,14 @@ import { contarUso, passou, registrarFalha, semFalhar } from './externo/apoio.js
 import type { EstadoFontes } from './externo/estadoFontes.js';
 import type { Buscar } from './externo/http.js';
 import { buscarLoteYahoo, dividirEmLotes, type CotacaoYahoo } from './externo/yahoo.js';
+import { intervaloDeAtualizacao, marcosDoPregao, situacaoDoPregao, type Pregao } from './pregao.js';
 
-/** Durante o pregão, cada ação é atualizada no máximo a cada 5 minutos. */
-export const INTERVALO_PREGAO_ABERTO_MS = 5 * 60 * 1000;
-/** Fora do pregão (noite, fim de semana, feriado), no máximo 1 vez por hora. */
-export const INTERVALO_PREGAO_FECHADO_MS = 60 * 60 * 1000;
 /** Uma cotação fica desatualizada quando perde duas atualizações seguidas. */
 const ATUALIZACOES_PERDIDAS_PARA_ALERTA = 2;
+/** O preço da brapi só substitui um do Yahoo que esteja sem atualizar há mais que isso. */
+const IDADE_MINIMA_PARA_RESERVA_MS = 30 * 60 * 1000;
+/** Intervalo mínimo entre rodadas de chamadas ao Yahoo (ex.: várias ações marcadas seguidas). */
+const PAUSA_ENTRE_RODADAS_YAHOO_MS = 10 * 1000;
 
 export type FonteCotacao = 'yahoo' | 'brapi';
 
@@ -31,7 +32,8 @@ export interface Cotacao {
 
 export interface PainelCotacoes {
   cotacoes: Cotacao[];
-  mercadoAberto: boolean;
+  /** null quando o pregão do dia ainda não foi confirmado pelo Yahoo. */
+  mercadoAberto: boolean | null;
   /** Fontes das cotações atuais (não desatualizadas), Yahoo primeiro. */
   fontesEmUso: FonteCotacao[];
 }
@@ -76,34 +78,47 @@ export function criarServicoCotacoes({
        atualizado_em = excluded.atualizado_em`,
   );
   const buscarPregao = banco.prepare('SELECT inicio, fim FROM pregao WHERE id = 1');
+  // Um pregão mais antigo (de um lote atrasado) nunca substitui um mais novo.
   const gravarPregao = banco.prepare(
     `INSERT INTO pregao (id, inicio, fim) VALUES (1, :inicio, :fim)
-     ON CONFLICT (id) DO UPDATE SET inicio = excluded.inicio, fim = excluded.fim`,
+     ON CONFLICT (id) DO UPDATE SET inicio = excluded.inicio, fim = excluded.fim
+     WHERE excluded.fim >= pregao.fim`,
   );
 
   /** Última tentativa no Yahoo por ação, também em memória (vale mesmo se o banco falhar). */
   const tentativasYahoo = new Map<Ticker, string>();
+  /** Ações que o Yahoo não devolveu na última tentativa. */
+  const ausentesNoYahoo = new Set<Ticker>();
+  /** Buscas no Yahoo em andamento por ação, para a reserva esperar por elas. */
+  const yahooEmAndamento = new Map<Ticker, Promise<void>>();
   const atualizacoesEmAndamento = new Map<string, Promise<void>>();
+  let ultimaRodadaYahoo: string | undefined;
 
   const lerCotacao = (ticker: Ticker) => buscarCotacao.get(ticker) as LinhaCotacao | undefined;
-
-  /** Sem pregão conhecido, considera aberto: o intervalo curto descobre o horário logo. */
-  function mercadoAberto(momento: Date): boolean {
-    const pregao = buscarPregao.get() as { inicio: string; fim: string } | undefined;
-    if (!pregao) return true;
-    const instante = momento.toISOString();
-    return pregao.inicio <= instante && instante < pregao.fim;
-  }
+  const lerPregao = () => buscarPregao.get() as Pregao | undefined;
 
   const intervalo = (momento: Date) =>
-    mercadoAberto(momento) ? INTERVALO_PREGAO_ABERTO_MS : INTERVALO_PREGAO_FECHADO_MS;
+    intervaloDeAtualizacao(situacaoDoPregao(lerPregao(), momento));
 
   const desatualizada = (atualizadoEm: string, momento: Date) =>
     passou(ATUALIZACOES_PERDIDAS_PARA_ALERTA * intervalo(momento), atualizadoEm, momento);
 
+  /** Vencida: passou o intervalo, ou passou um marco do pregão (fim do leilão, abertura). */
+  function vencidaNoYahoo(ticker: Ticker, momento: Date): boolean {
+    const salva = lerCotacao(ticker);
+    const ultimas = [
+      tentativasYahoo.get(ticker),
+      salva?.fonte === 'yahoo' ? salva.atualizado_em : undefined,
+    ];
+    const ultima = ultimas
+      .filter((instante) => instante !== undefined)
+      .sort()
+      .at(-1);
+    if (passou(intervalo(momento), ultima, momento)) return true;
+    return marcosDoPregao(lerPregao(), momento).some((marco) => ultima! < marco);
+  }
+
   function salvarDoYahoo(cotacoes: readonly CotacaoYahoo[], momento: Date): void {
-    const pregoes = cotacoes.flatMap((c) => (c.pregao ? [c.pregao] : []));
-    const maisRecente = pregoes.sort((a, b) => a.fim.localeCompare(b.fim)).at(-1);
     emTransacao(banco, () => {
       for (const { ticker, precoCentavos, negociadoEm } of cotacoes) {
         gravarCotacao.run({
@@ -114,23 +129,16 @@ export function criarServicoCotacoes({
           atualizadoEm: momento.toISOString(),
         });
       }
-      if (maisRecente) gravarPregao.run({ ...maisRecente });
     });
   }
 
-  async function atualizarPeloYahoo(tickers: readonly Ticker[], momento: Date): Promise<void> {
-    const intervaloAtual = intervalo(momento);
-    const vencidas = tickers.filter((ticker) => {
-      const salva = lerCotacao(ticker);
-      const ultimaDoYahoo = salva?.fonte === 'yahoo' ? salva.atualizado_em : undefined;
-      return [tentativasYahoo.get(ticker), ultimaDoYahoo].every((instante) =>
-        passou(intervaloAtual, instante, momento),
-      );
-    });
-    if (vencidas.length === 0 || !estado.podeChamar('yahoo', momento)) return;
-    for (const ticker of vencidas) tentativasYahoo.set(ticker, momento.toISOString());
-
-    const recebidas = new Set<Ticker>();
+  /** Busca as vencidas em lotes; o aviso de ausentes considera todas as ações pedidas. */
+  async function buscarNoYahoo(
+    vencidas: readonly Ticker[],
+    pedidas: readonly Ticker[],
+    momento: Date,
+  ): Promise<void> {
+    const pregoes: Pregao[] = [];
     for (const lote of dividirEmLotes(vencidas)) {
       // Outro pedido em paralelo pode ter pausado o Yahoo enquanto este lote esperava.
       if (!estado.podeChamar('yahoo', momento)) return;
@@ -144,27 +152,58 @@ export function criarServicoCotacoes({
       }
       // Erro ao salvar é do banco local, não do Yahoo: não muda o estado da API.
       semFalhar('salvar as cotações do Yahoo', () => salvarDoYahoo(cotacoes, momento));
-      for (const { ticker } of cotacoes) recebidas.add(ticker);
+      const recebidas = new Set(cotacoes.map((c) => c.ticker));
+      for (const ticker of lote) {
+        if (recebidas.has(ticker)) ausentesNoYahoo.delete(ticker);
+        else ausentesNoYahoo.add(ticker);
+      }
+      for (const { pregao } of cotacoes) if (pregao) pregoes.push(pregao);
     }
 
-    const ausentes = vencidas.filter((ticker) => !recebidas.has(ticker));
-    const aviso = ausentes.length > 0 ? `Sem cotação no Yahoo: ${ausentes.join(', ')}` : null;
+    const maisRecente = pregoes.sort((a, b) => a.fim.localeCompare(b.fim)).at(-1);
+    if (maisRecente) semFalhar('salvar o pregão', () => gravarPregao.run({ ...maisRecente }));
     semFalhar('registrar o sucesso do Yahoo', () =>
-      estado.registrarSucesso('yahoo', momento, aviso),
+      estado.registrarSucesso('yahoo', momento, avisoDeAusentes(pedidas)),
     );
   }
 
-  /** Usa o preço da listagem da brapi para as ações que o Yahoo não atualizou. */
-  async function completarPelaBrapi(tickers: readonly Ticker[], momento: Date): Promise<void> {
-    const semYahooAtual = tickers.filter((ticker) => {
-      const salva = lerCotacao(ticker);
-      return !salva || salva.fonte !== 'yahoo' || desatualizada(salva.atualizado_em, momento);
+  /** Busca no Yahoo as ações vencidas; devolve a busca em andamento, se houver. */
+  function atualizarPeloYahoo(tickers: readonly Ticker[], momento: Date): Promise<void> {
+    const vencidas = tickers.filter(
+      (ticker) => !yahooEmAndamento.has(ticker) && vencidaNoYahoo(ticker, momento),
+    );
+    const pausaCurta = !passou(PAUSA_ENTRE_RODADAS_YAHOO_MS, ultimaRodadaYahoo, momento);
+    if (vencidas.length === 0 || pausaCurta || !estado.podeChamar('yahoo', momento)) {
+      return Promise.resolve();
+    }
+
+    ultimaRodadaYahoo = momento.toISOString();
+    for (const ticker of vencidas) tentativasYahoo.set(ticker, momento.toISOString());
+    const busca = buscarNoYahoo(vencidas, tickers, momento).finally(() => {
+      for (const ticker of vencidas) yahooEmAndamento.delete(ticker);
     });
-    if (semYahooAtual.length === 0) return;
+    for (const ticker of vencidas) yahooEmAndamento.set(ticker, busca);
+    return busca;
+  }
+
+  /** Usa o preço da listagem da brapi para as ações sem cotação recente do Yahoo. */
+  async function completarPelaBrapi(tickers: readonly Ticker[], momento: Date): Promise<void> {
+    // Espera buscas no Yahoo iniciadas por outros pedidos, para não usar a reserva à toa.
+    await Promise.all(tickers.map((ticker) => yahooEmAndamento.get(ticker)));
+
+    const precisamDeReserva = tickers.filter((ticker) => {
+      const salva = lerCotacao(ticker);
+      if (!salva || salva.fonte !== 'yahoo') return true;
+      return (
+        desatualizada(salva.atualizado_em, momento) &&
+        passou(IDADE_MINIMA_PARA_RESERVA_MS, salva.atualizado_em, momento)
+      );
+    });
+    if (precisamDeReserva.length === 0) return;
 
     await catalogo.garantirAtualizado();
-    const precos = catalogo.precos(semYahooAtual);
-    for (const ticker of semYahooAtual) {
+    const precos = catalogo.precos(precisamDeReserva);
+    for (const ticker of precisamDeReserva) {
       const reserva = precos.get(ticker);
       const salva = lerCotacao(ticker);
       if (!reserva || (salva && reserva.atualizadoEm <= salva.atualizado_em)) continue;
@@ -191,16 +230,34 @@ export function criarServicoCotacoes({
     }
   }
 
+  function atualizar(tickers: readonly Ticker[]): Promise<void> {
+    const chave = tickers.join(',');
+    let atualizacao = atualizacoesEmAndamento.get(chave);
+    if (!atualizacao) {
+      atualizacao = atualizarAgora(tickers).finally(() => atualizacoesEmAndamento.delete(chave));
+      atualizacoesEmAndamento.set(chave, atualizacao);
+    }
+    return atualizacao;
+  }
+
   return {
     /** Atualiza as cotações vencidas; falhas ficam registradas e nunca são lançadas. */
-    atualizar(tickers: readonly Ticker[]): Promise<void> {
-      const chave = tickers.join(',');
-      let atualizacao = atualizacoesEmAndamento.get(chave);
-      if (!atualizacao) {
-        atualizacao = atualizarAgora(tickers).finally(() => atualizacoesEmAndamento.delete(chave));
-        atualizacoesEmAndamento.set(chave, atualizacao);
+    atualizar,
+
+    /**
+     * Atualiza, mas espera no máximo `limiteMs`: depois disso a resposta segue com os dados
+     * salvos e a atualização termina sozinha, valendo para o próximo pedido.
+     */
+    async atualizarComLimite(tickers: readonly Ticker[], limiteMs: number): Promise<void> {
+      let temporizador: NodeJS.Timeout | undefined;
+      const limite = new Promise<void>((resolver) => {
+        temporizador = setTimeout(resolver, limiteMs);
+      });
+      try {
+        await Promise.race([atualizar(tickers), limite]);
+      } finally {
+        clearTimeout(temporizador);
       }
-      return atualizacao;
     },
 
     /** Últimas cotações salvas das ações pedidas, na mesma ordem. */
@@ -229,7 +286,14 @@ export function criarServicoCotacoes({
       });
       const emUso = new Set(cotacoes.filter((c) => !c.desatualizada).map((c) => c.fonte));
       const fontesEmUso = (['yahoo', 'brapi'] as const).filter((fonte) => emUso.has(fonte));
-      return { cotacoes, mercadoAberto: mercadoAberto(momento), fontesEmUso };
+      const situacao = situacaoDoPregao(lerPregao(), momento);
+      const mercadoAberto = situacao === 'desconhecido' ? null : situacao === 'aberto';
+      return { cotacoes, mercadoAberto, fontesEmUso };
     },
   };
+
+  function avisoDeAusentes(tickers: readonly Ticker[]): string | null {
+    const ausentes = tickers.filter((ticker) => ausentesNoYahoo.has(ticker));
+    return ausentes.length > 0 ? `Sem cotação no Yahoo: ${ausentes.join(', ')}` : null;
+  }
 }

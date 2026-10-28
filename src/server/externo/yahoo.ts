@@ -1,5 +1,6 @@
 import { reaisParaCentavos, type Centavos } from '../../shared/dinheiro.js';
 import { normalizarTicker, type Ticker } from '../../shared/ticker.js';
+import type { Pregao } from '../pregao.js';
 import { ErroFonte } from './erroFonte.js';
 import { requisitarExterno, type Buscar } from './http.js';
 
@@ -14,11 +15,6 @@ const LIMITE_RESPOSTA_BYTES = 1024 * 1024;
 /** Sem User-Agent o Yahoo responde 429. Não é chave nem conta: só o tipo de cliente. */
 const CABECALHOS_YAHOO = { 'user-agent': 'Mozilla/5.0' };
 const SUFIXO_B3 = '.SA';
-
-export interface Pregao {
-  inicio: string;
-  fim: string;
-}
 
 export interface CotacaoYahoo {
   ticker: Ticker;
@@ -65,31 +61,45 @@ function lerPregao(periodo: unknown): Pregao | null {
   return inicio && fim && inicio < fim ? { inicio, fim } : null;
 }
 
-function lerCotacao(item: unknown, pedidos: ReadonlySet<Ticker>): CotacaoYahoo | null {
+/**
+ * Lê um item do spark. "estrutura" diz se o item tem o formato esperado; "cotacao" é null quando
+ * a ação veio sem preço utilizável (ex.: suspensa, com preço 0), o que não é mudança de formato.
+ */
+function lerItem(
+  item: unknown,
+  pedidos: ReadonlySet<Ticker>,
+): { estrutura: boolean; cotacao: CotacaoYahoo | null } {
   const { symbol, response } = (item ?? {}) as { symbol?: unknown; response?: unknown };
-  if (typeof symbol !== 'string' || !symbol.endsWith(SUFIXO_B3)) return null;
-  const ticker = normalizarTicker(symbol.slice(0, -SUFIXO_B3.length));
-  if (!ticker || !pedidos.has(ticker) || !Array.isArray(response)) return null;
+  const meta = Array.isArray(response)
+    ? (response[0] as { meta?: Record<string, unknown> } | undefined)?.meta
+    : undefined;
+  const estrutura =
+    typeof symbol === 'string' && typeof meta === 'object' && meta !== null && 'currency' in meta;
+  if (!estrutura || !symbol.endsWith(SUFIXO_B3)) return { estrutura, cotacao: null };
 
-  const meta = (response[0] as { meta?: Record<string, unknown> } | undefined)?.meta;
-  if (!meta || meta.currency !== 'BRL') return null;
+  const ticker = normalizarTicker(symbol.slice(0, -SUFIXO_B3.length));
   const preco = meta.regularMarketPrice;
-  if (typeof preco !== 'number' || !(preco > 0)) return null;
+  if (!ticker || !pedidos.has(ticker) || meta.currency !== 'BRL') {
+    return { estrutura, cotacao: null };
+  }
+  if (typeof preco !== 'number' || !(preco > 0)) return { estrutura, cotacao: null };
   let precoCentavos: Centavos;
   try {
     precoCentavos = reaisParaCentavos(preco);
   } catch {
-    return null;
+    return { estrutura, cotacao: null };
   }
   const negociadoEm = lerInstante(meta.regularMarketTime);
-  if (precoCentavos <= 0 || !negociadoEm) return null;
+  if (precoCentavos <= 0 || !negociadoEm) return { estrutura, cotacao: null };
 
-  return { ticker, precoCentavos, negociadoEm, pregao: lerPregao(meta.currentTradingPeriod) };
+  const pregao = lerPregao(meta.currentTradingPeriod);
+  return { estrutura, cotacao: { ticker, precoCentavos, negociadoEm, pregao } };
 }
 
 /**
- * Valida a resposta do spark. Ações que o Yahoo não conhece simplesmente não vêm na lista;
- * se vierem itens mas nenhum for reconhecido, o formato da API mudou.
+ * Valida a resposta do spark. Ações que o Yahoo não conhece não vêm na lista, e ações sem
+ * preço (suspensas) ficam sem cotação; só itens com estrutura irreconhecível indicam que o
+ * formato da API mudou.
  */
 export function interpretarSpark(json: unknown, pedidos: readonly Ticker[]): CotacaoYahoo[] {
   const resultado = (json as { spark?: { result?: unknown } } | null)?.spark?.result;
@@ -97,11 +107,13 @@ export function interpretarSpark(json: unknown, pedidos: readonly Ticker[]): Cot
 
   const conjunto = new Set(pedidos);
   const cotacoes = new Map<Ticker, CotacaoYahoo>();
+  let reconhecidos = 0;
   for (const item of resultado) {
-    const cotacao = lerCotacao(item, conjunto);
+    const { estrutura, cotacao } = lerItem(item, conjunto);
+    if (estrutura) reconhecidos++;
     if (cotacao && !cotacoes.has(cotacao.ticker)) cotacoes.set(cotacao.ticker, cotacao);
   }
-  if (resultado.length > 0 && cotacoes.size === 0) {
+  if (resultado.length > 0 && reconhecidos === 0) {
     throw formatoAlterado('nenhuma cotação reconhecida');
   }
   return [...cotacoes.values()];

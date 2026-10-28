@@ -77,9 +77,13 @@ Login, sales, historical charts, real-time quotes, hosting.
 - Primary: Yahoo Finance `v7/finance/spark` (unofficial; no key, cookie or
   crumb). Selected tickers (`BBAS3.SA`) go in batches of at most 20 (Yahoo's
   limit), so 50 stocks = 3 calls. Only header sent: `User-Agent: Mozilla/5.0`
-  (Yahoo answers 429 without it). Each stock refreshes at most every 5 minutes
-  during the trading session and at most once an hour when it is closed
-  (session hours come from Yahoo, so holidays need no calendar).
+  (Yahoo answers 429 without it). Session hours come from Yahoo (no holiday
+  calendar). Each stock refreshes at most every 5 minutes from the opening
+  until 30 minutes after the close (closing auction), every 15 minutes on a
+  weekday during session hours while Yahoo has not confirmed that day's
+  session, and at most once an hour otherwise; plus one forced refresh after
+  the auction and one at the projected opening. At least 10 s between Yahoo
+  rounds; `/api/cotacoes` waits at most 8 s and then answers with saved data.
 - Last known price per stock is kept in `cotacoes`; a stock Yahoo did not
   refresh uses the brapi list price, and with no source the saved price is
   shown flagged as outdated.

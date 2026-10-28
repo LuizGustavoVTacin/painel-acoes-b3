@@ -61,7 +61,9 @@ export function criarRotasLogos({ catalogo }: DependenciasRotas): Router {
   return rotas;
 }
 
-/** Situação de cada API externa, para o rodapé e os alertas da tela. */
+/** Tempo máximo que a rota de cotações espera as APIs antes de responder com o que tem. */
+export const ESPERA_MAXIMA_COTACOES_MS = 8000;
+
 /**
  * Cotações das ações selecionadas, com a fonte de cada uma e o estado das APIs.
  * Nunca falha por causa das APIs: no pior caso devolve o último preço salvo.
@@ -70,12 +72,13 @@ export function criarRotasCotacoes({ selecao, cotacoes, estado }: DependenciasRo
   const rotas = Router();
   rotas.get('/', async (_req, res) => {
     const tickers = selecao.listar();
-    await cotacoes.atualizar(tickers);
+    await cotacoes.atualizarComLimite(tickers, ESPERA_MAXIMA_COTACOES_MS);
     res.json({ ...cotacoes.listar(tickers), fontes: estado.listar() });
   });
   return rotas;
 }
 
+/** Situação de cada API externa, para o rodapé e os alertas da tela. */
 export function criarRotasFontes({ estado }: DependenciasRotas): Router {
   const rotas = Router();
   rotas.get('/', (_req, res) => {

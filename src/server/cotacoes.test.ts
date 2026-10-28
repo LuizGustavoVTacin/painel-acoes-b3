@@ -8,7 +8,7 @@ import { criarServicoCotacoes } from './cotacoes.js';
 import { URL_LISTA_BRAPI } from './externo/brapi.js';
 import { criarEstadoFontes } from './externo/estadoFontes.js';
 import { criarFetchFalso, json } from './testes/fetchFalso.js';
-import { itemSpark, spark } from './testes/yahooFalso.js';
+import { itemSpark, segundos, spark } from './testes/yahooFalso.js';
 
 const MINUTO = 60 * 1000;
 const HORA = 60 * MINUTO;
@@ -135,18 +135,6 @@ describe('cotações pelo Yahoo', () => {
     expect(doYahoo()).toHaveLength(2);
   });
 
-  it('feriado: o Yahoo repete o pregão anterior e o app segue no ritmo de pregão fechado', async () => {
-    agora = new Date('2026-10-28T15:00:00Z'); // dia seguinte, 12h, sem pregão novo
-    const { cotacoes, doYahoo } = montar({ [URL_YAHOO]: spark(itemSpark('BBAS3')) });
-
-    const painel = await atualizarEListar(cotacoes, ['BBAS3']);
-    avancar(30 * MINUTO);
-    await cotacoes.atualizar(['BBAS3']);
-
-    expect(painel.mercadoAberto).toBe(false);
-    expect(doYahoo()).toHaveLength(1);
-  });
-
   it('ação recém-selecionada é buscada na hora, sem repetir as que estão em dia', async () => {
     const { cotacoes, doYahoo } = montar({
       [URL_YAHOO]: [spark(itemSpark('BBAS3')), spark(itemSpark('PETR4'))],
@@ -161,14 +149,6 @@ describe('cotações pelo Yahoo', () => {
       'PETR4.SA',
     ]);
     expect(painel.cotacoes.map((c) => c.fonte)).toEqual(['yahoo', 'yahoo']);
-  });
-
-  it('pedidos simultâneos fazem uma só chamada', async () => {
-    const { cotacoes, doYahoo } = montar({ [URL_YAHOO]: spark(itemSpark('BBAS3')) });
-
-    await Promise.all([cotacoes.atualizar(['BBAS3']), cotacoes.atualizar(['BBAS3'])]);
-
-    expect(doYahoo()).toHaveLength(1);
   });
 });
 
@@ -208,21 +188,6 @@ describe('reserva pela brapi e falhas', () => {
     expect(doYahoo()).toHaveLength(1);
   });
 
-  it('Yahoo instável: usa a brapi e volta ao Yahoo quando ele se recupera', async () => {
-    const { cotacoes, estado } = montar({
-      [URL_YAHOO]: [json({}, { status: 503 }), spark(itemSpark('BBAS3'))],
-      [URL_LISTA_BRAPI]: listaBrapi(),
-    });
-
-    const antes = await atualizarEListar(cotacoes, ['BBAS3']);
-    avancar(5 * MINUTO);
-    const depois = await atualizarEListar(cotacoes, ['BBAS3']);
-
-    expect(antes.cotacoes[0]).toMatchObject({ fonte: 'brapi', precoCentavos: 5000 });
-    expect(depois.cotacoes[0]).toMatchObject({ fonte: 'yahoo', precoCentavos: 1738 });
-    expect(estado.consultar('yahoo')?.situacao).toBe('ok');
-  });
-
   it('falha no segundo lote: guarda o primeiro e não insiste no terceiro', async () => {
     const tickers = Array.from({ length: 45 }, (_, i) => `AB${String(i).padStart(2, '0')}3`);
     const { cotacoes, estado, doYahoo } = montar({
@@ -238,49 +203,6 @@ describe('reserva pela brapi e falhas', () => {
     expect(doYahoo()).toHaveLength(2);
     expect(painel.cotacoes.filter((c) => c.fonte === 'yahoo')).toHaveLength(20);
     expect(estado.consultar('yahoo')?.situacao).toBe('instavel');
-  });
-
-  it('bloqueio feito por um pedido paralelo interrompe os lotes seguintes', async () => {
-    const atrasado = (resposta: () => Response, ms: number) => async () => {
-      await new Promise((resolver) => setTimeout(resolver, ms));
-      return resposta();
-    };
-    const muitas = Array.from({ length: 25 }, (_, i) => `AB${String(i).padStart(2, '0')}3`);
-    const { cotacoes, doYahoo } = montar({
-      [URL_YAHOO]: [
-        atrasado(() => json({}, { status: 402 }), 1),
-        atrasado(() => spark(...muitas.slice(0, 20).map((t) => itemSpark(t))), 20),
-        spark(),
-      ],
-      [URL_LISTA_BRAPI]: listaBrapi(),
-    });
-
-    await Promise.all([cotacoes.atualizar(['BBAS3']), cotacoes.atualizar(muitas)]);
-
-    expect(doYahoo()).toHaveLength(2);
-  });
-
-  it('preço reserva antigo da brapi não substitui um preço mais novo do Yahoo', async () => {
-    const { cotacoes } = montar({
-      [URL_YAHOO]: [
-        json({}, { status: 503 }),
-        spark(itemSpark('BBAS3')),
-        json({}, { status: 503 }),
-      ],
-      [URL_LISTA_BRAPI]: [listaBrapi(), new TypeError('fetch failed')],
-    });
-    await cotacoes.atualizar(['BBAS3']); // brapi às 15:00
-    avancar(5 * MINUTO);
-    await cotacoes.atualizar(['BBAS3']); // Yahoo às 15:05
-
-    avancar(11 * MINUTO); // Yahoo falha e a brapi não responde: só há o preço antigo da brapi
-    const painel = await atualizarEListar(cotacoes, ['BBAS3']);
-
-    expect(painel.cotacoes[0]).toMatchObject({
-      fonte: 'yahoo',
-      precoCentavos: 1738,
-      desatualizada: true,
-    });
   });
 
   it('sem nenhuma fonte, mantém o último preço e marca como desatualizado', async () => {
@@ -371,5 +293,246 @@ describe('GET /api/cotacoes', () => {
     expect(resposta.status).toBe(200);
     expect(resposta.body.cotacoes).toEqual([expect.objectContaining({ precoCentavos: null })]);
     expect(resposta.body.fontesEmUso).toEqual([]);
+  });
+});
+
+describe('ritmo pelo horário do pregão', () => {
+  it('feriado: sem pregão confirmado no dia útil, atualiza a cada 15 minutos', async () => {
+    agora = new Date('2026-10-28T15:00:00Z'); // quarta, 12h; o Yahoo só tem o pregão de terça
+    const { cotacoes, doYahoo } = montar({ [URL_YAHOO]: spark(itemSpark('BBAS3')) });
+
+    const painel = await atualizarEListar(cotacoes, ['BBAS3']);
+    avancar(14 * MINUTO);
+    await cotacoes.atualizar(['BBAS3']);
+    expect(doYahoo()).toHaveLength(1);
+    avancar(1 * MINUTO);
+    await cotacoes.atualizar(['BBAS3']);
+
+    expect(painel.mercadoAberto).toBeNull();
+    expect(doYahoo()).toHaveLength(2);
+  });
+
+  it('pega o preço do leilão de fechamento logo depois das 17h', async () => {
+    agora = new Date('2026-10-27T19:58:00Z');
+    const { cotacoes, doYahoo } = montar({
+      [URL_YAHOO]: [spark(itemSpark('BBAS3', 17.38)), spark(itemSpark('BBAS3', 17.5))],
+    });
+    await cotacoes.atualizar(['BBAS3']);
+
+    agora = new Date('2026-10-27T20:15:00Z');
+    const painel = await atualizarEListar(cotacoes, ['BBAS3']);
+
+    expect(doYahoo()).toHaveLength(2);
+    expect(painel.cotacoes[0].precoCentavos).toBe(1750);
+    expect(painel.mercadoAberto).toBe(false);
+  });
+
+  it('busca de novo ao fim do leilão, mesmo dentro do intervalo', async () => {
+    agora = new Date('2026-10-27T20:27:00Z');
+    const { cotacoes, doYahoo } = montar({ [URL_YAHOO]: spark(itemSpark('BBAS3')) });
+    await cotacoes.atualizar(['BBAS3']);
+
+    agora = new Date('2026-10-27T20:30:00Z'); // 3 min depois, mas o leilão acabou
+    await cotacoes.atualizar(['BBAS3']);
+    agora = new Date('2026-10-27T20:45:00Z');
+    await cotacoes.atualizar(['BBAS3']);
+
+    expect(doYahoo()).toHaveLength(2);
+  });
+
+  it('descobre o pregão novo logo na abertura do dia seguinte', async () => {
+    const pregao28 = {
+      currentTradingPeriod: {
+        regular: {
+          start: segundos('2026-10-28T13:00:00Z'),
+          end: segundos('2026-10-28T20:00:00Z'),
+        },
+      },
+    };
+    agora = new Date('2026-10-28T12:58:00Z'); // 9h58 de quarta: Yahoo ainda informa terça
+    const { cotacoes, doYahoo } = montar({
+      [URL_YAHOO]: [spark(itemSpark('BBAS3')), spark(itemSpark('BBAS3', 18, pregao28))],
+    });
+    await cotacoes.atualizar(['BBAS3']);
+
+    agora = new Date('2026-10-28T13:00:00Z');
+    const painel = await atualizarEListar(cotacoes, ['BBAS3']);
+
+    expect(doYahoo()).toHaveLength(2);
+    expect(painel.mercadoAberto).toBe(true);
+  });
+});
+
+describe('robustez das cotações (revisão)', () => {
+  it('pedidos simultâneos compartilham a mesma atualização', () => {
+    const { cotacoes } = montar({ [URL_YAHOO]: spark(itemSpark('BBAS3')) });
+
+    expect(cotacoes.atualizar(['BBAS3'])).toBe(cotacoes.atualizar(['BBAS3']));
+  });
+
+  it('ação suspensa (preço 0) fica sem cotação, sem pausar o Yahoo', async () => {
+    const { cotacoes, estado } = montar({
+      [URL_YAHOO]: spark(itemSpark('SUSP3', 0)),
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+
+    await cotacoes.atualizar(['SUSP3']);
+
+    expect(estado.consultar('yahoo')).toMatchObject({
+      situacao: 'ok',
+      mensagem: 'Sem cotação no Yahoo: SUSP3',
+    });
+    expect(estado.podeChamar('yahoo', agora)).toBe(true);
+  });
+
+  it('o aviso de ação ausente não some quando outra ação é buscada', async () => {
+    const { cotacoes, estado } = montar({
+      [URL_YAHOO]: [spark(itemSpark('BBAS3')), spark(itemSpark('PETR4'))],
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+    await cotacoes.atualizar(['BBAS3', 'ELET3']);
+
+    avancar(1 * MINUTO);
+    await cotacoes.atualizar(['BBAS3', 'ELET3', 'PETR4']);
+
+    expect(estado.consultar('yahoo')?.mensagem).toBe('Sem cotação no Yahoo: ELET3');
+  });
+
+  it('pausa de 10 segundos entre rodadas de chamadas ao Yahoo', async () => {
+    const { cotacoes, doYahoo } = montar({
+      [URL_YAHOO]: [spark(itemSpark('BBAS3')), spark(itemSpark('PETR4'))],
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+    await cotacoes.atualizar(['BBAS3']);
+
+    avancar(5000);
+    await cotacoes.atualizar(['BBAS3', 'PETR4']);
+    expect(doYahoo()).toHaveLength(1);
+    avancar(5000);
+    await cotacoes.atualizar(['BBAS3', 'PETR4']);
+    expect(doYahoo()).toHaveLength(2);
+  });
+
+  it('bloqueio durante a rodada interrompe os lotes seguintes', async () => {
+    const muitas = Array.from({ length: 25 }, (_, i) => `AB${String(i).padStart(2, '0')}3`);
+    const { cotacoes, estado, doYahoo } = montar({
+      [URL_YAHOO]: spark(...muitas.slice(0, 20).map((t) => itemSpark(t))),
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+    // Liberado antes da rodada e do 1º lote; bloqueado (por outro pedido) antes do 2º.
+    vi.spyOn(estado, 'podeChamar')
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(true)
+      .mockReturnValue(false);
+
+    await cotacoes.atualizar(muitas);
+
+    expect(doYahoo()).toHaveLength(1);
+  });
+
+  it('Yahoo instável: usa a brapi e volta ao Yahoo quando ele se recupera', async () => {
+    const { cotacoes, estado } = montar({
+      [URL_YAHOO]: [json({}, { status: 503 }), spark(itemSpark('BBAS3'))],
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+
+    const antes = await atualizarEListar(cotacoes, ['BBAS3']);
+    avancar(15 * MINUTO); // sem pregão conhecido, o ritmo é de 15 minutos
+    const depois = await atualizarEListar(cotacoes, ['BBAS3']);
+
+    expect(antes.cotacoes[0]).toMatchObject({ fonte: 'brapi', precoCentavos: 5000 });
+    expect(depois.cotacoes[0]).toMatchObject({ fonte: 'yahoo', precoCentavos: 1738 });
+    expect(estado.consultar('yahoo')?.situacao).toBe('ok');
+  });
+
+  it('falha curta do Yahoo não troca o preço dele pelo da brapi (sem alternar fontes)', async () => {
+    const { cotacoes, daBrapi } = montar({
+      [URL_YAHOO]: [spark(itemSpark('BBAS3')), json({}, { status: 503 })],
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+    await cotacoes.atualizar(['BBAS3']);
+
+    avancar(11 * MINUTO); // desatualizada, mas há menos de 30 min
+    const painel = await atualizarEListar(cotacoes, ['BBAS3']);
+
+    expect(painel.cotacoes[0]).toMatchObject({ fonte: 'yahoo', desatualizada: true });
+    expect(daBrapi()).toHaveLength(0);
+  });
+
+  it('falha longa do Yahoo passa a usar a brapi', async () => {
+    const { cotacoes } = montar({
+      [URL_YAHOO]: [spark(itemSpark('BBAS3')), json({}, { status: 503 })],
+      [URL_LISTA_BRAPI]: listaBrapi(),
+    });
+    await cotacoes.atualizar(['BBAS3']);
+
+    avancar(31 * MINUTO);
+    const painel = await atualizarEListar(cotacoes, ['BBAS3']);
+
+    expect(painel.cotacoes[0]).toMatchObject({ fonte: 'brapi', precoCentavos: 5000 });
+  });
+
+  it('preço reserva antigo da brapi não substitui um preço mais novo do Yahoo', async () => {
+    const { cotacoes } = montar({
+      [URL_YAHOO]: [
+        json({}, { status: 503 }),
+        spark(itemSpark('BBAS3')),
+        json({}, { status: 503 }),
+      ],
+      [URL_LISTA_BRAPI]: [listaBrapi(), new TypeError('fetch failed')],
+    });
+    await cotacoes.atualizar(['BBAS3']); // brapi às 15:00
+    avancar(15 * MINUTO);
+    await cotacoes.atualizar(['BBAS3']); // Yahoo às 15:15
+
+    avancar(31 * MINUTO); // Yahoo falha e a brapi não responde: só há o preço antigo da brapi
+    const painel = await atualizarEListar(cotacoes, ['BBAS3']);
+
+    expect(painel.cotacoes[0]).toMatchObject({ fonte: 'yahoo', precoCentavos: 1738 });
+  });
+
+  it('com APIs lentas, a resposta sai no tempo limite com os dados salvos', async () => {
+    const { cotacoes } = montar({ [URL_YAHOO]: () => new Promise<Response>(() => {}) });
+
+    const inicio = Date.now();
+    await cotacoes.atualizarComLimite(['BBAS3'], 30);
+
+    expect(Date.now() - inicio).toBeLessThan(1000);
+    expect(cotacoes.listar(['BBAS3']).cotacoes[0].precoCentavos).toBeNull();
+  });
+});
+
+describe('concorrência e pregão salvo', () => {
+  it('a reserva espera a busca no Yahoo que outro pedido já iniciou', async () => {
+    const lento = async () => {
+      await new Promise((resolver) => setTimeout(resolver, 20));
+      return spark(itemSpark('BBAS3'));
+    };
+    const { cotacoes } = montar({ [URL_YAHOO]: lento, [URL_LISTA_BRAPI]: listaBrapi() });
+
+    const primeira = cotacoes.atualizar(['BBAS3']);
+    await cotacoes.atualizar(['BBAS3', 'PETR4']);
+    const painel = cotacoes.listar(['BBAS3', 'PETR4']);
+    await primeira;
+
+    expect(painel.cotacoes.map((c) => c.fonte)).toEqual(['yahoo', 'brapi']);
+  });
+
+  it('um pregão mais antigo nunca substitui um mais novo', async () => {
+    const pregao28 = {
+      currentTradingPeriod: {
+        regular: { start: segundos('2026-10-28T13:00:00Z'), end: segundos('2026-10-28T20:00:00Z') },
+      },
+    };
+    const { cotacoes } = montar({
+      [URL_YAHOO]: [spark(itemSpark('BBAS3', 18, pregao28)), spark(itemSpark('BBAS3'))],
+    });
+    await cotacoes.atualizar(['BBAS3']);
+    avancar(HORA);
+    await cotacoes.atualizar(['BBAS3']);
+
+    expect(banco.prepare('SELECT fim FROM pregao').get()).toEqual({
+      fim: '2026-10-28T20:00:00.000Z',
+    });
   });
 });

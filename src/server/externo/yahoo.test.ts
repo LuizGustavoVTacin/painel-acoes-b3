@@ -84,6 +84,14 @@ describe('interpretarSpark', () => {
     ).toEqual(['ITUB4']);
   });
 
+  it.each([
+    ['preço zero (suspensa)', 0],
+    ['preço ausente', undefined],
+  ])('lote só com ação de %s não é mudança de formato', (_caso, preco) => {
+    const item = itemSpark('SUSP3', 1, { regularMarketPrice: preco });
+    expect(interpretarSpark({ spark: { result: [item] } }, ['SUSP3'])).toEqual([]);
+  });
+
   it('ações que o Yahoo não conhece simplesmente não vêm (sem erro)', () => {
     expect(interpretarSpark({ spark: { result: [] } }, ['ELET3'])).toEqual([]);
   });
