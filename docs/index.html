@@ -161,7 +161,7 @@
             </li>
             <li class="feita">
               <strong>Menu e escolha das ações</strong>
-              <span>Lista com caixas de seleção e limite de 50.</span>
+              <span>Lista com caixas de seleção, limite de 50 e filtros (etapa 8b).</span>
             </li>
             <li class="feita">
               <strong>Tela de compras</strong>
@@ -557,6 +557,12 @@ docs/            Esta documentação</code></pre>
               Unibanco.
             </li>
             <li>
+              Se quiser, filtre por <strong>Setor</strong> (em português, com quantas ações cada um
+              tem) e escolha o que <strong>Mostrar</strong>: todas, em alta hoje (da maior alta para
+              a menor), em baixa hoje (da maior queda para a menor) ou só as que você comprou. Os
+              filtros se combinam entre si e com a busca, e trocar de filtro não perde as marcações.
+            </li>
+            <li>
               Marque e desmarque as caixas. O contador mostra “N de 50 selecionadas”; ao chegar a
               50, as caixas desmarcadas ficam desabilitadas até você desmarcar alguma.
             </li>
@@ -586,6 +592,23 @@ docs/            Esta documentação</code></pre>
                   <td>
                     As ações já salvas ficam no topo da lista e mantêm o lugar na grade; desmarcar e
                     marcar de novo não muda a ordem.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Variação do dia</td>
+                  <td>
+                    Cada linha mostra a variação informada pela brapi (▲ +2,35% em verde, ▼ -1,10%
+                    em vermelho), com o horário da lista. A variação é datada pelo pregão do Yahoo:
+                    “Em alta hoje” só aparece quando ela é do pregão de hoje; no sábado, por
+                    exemplo, os filtros dizem “no pregão de 30/10/2026”, e sem essa informação, “na
+                    última lista”.
+                  </td>
+                </tr>
+                <tr>
+                  <td>“Que comprei”</td>
+                  <td>
+                    Mostra as ações com compras registradas, inclusive uma que tenha saído da bolsa.
+                    Fica desabilitado (com o motivo) enquanto as compras carregam ou se falharem.
                   </td>
                 </tr>
                 <tr>
@@ -1009,7 +1032,28 @@ docs/            Esta documentação</code></pre>
             <li>
               Busca sem acentos e sem diferenciar maiúsculas: “itau” encontra “ITAÚ UNIBANCO”.
             </li>
-            <li>Ações que saem da listagem continuam no catálogo com o último preço conhecido.</li>
+            <li>
+              Cada ação guarda também o <strong>setor</strong> e a
+              <strong>variação do dia</strong> (em centésimos de ponto percentual: −6,68% = −668),
+              que vêm na mesma chamada. A variação vale só para quem veio na lista mais recente.
+            </li>
+            <li>
+              <strong>Ações que saíram da bolsa</strong> deixam de aparecer no menu depois de faltar
+              em duas listas de tamanho normal seguidas (uma ausência isolada não as esconde);
+              continuam no banco com o último preço e o logo.
+            </li>
+            <li>
+              Proteção: uma lista com menos de 90% do tamanho da última lista completa é tratada
+              como falha da brapi. Os dados dela são guardados e o rodapé avisa (“menos ações que o
+              normal”), mas nenhuma ação é escondida, nem com vários cortes seguidos. Se três listas
+              menores seguidas vierem com o mesmo tamanho (±2%), a brapi mudou de vez e esse passa a
+              ser o novo normal.
+            </li>
+            <li>
+              Cada lista recebe um número que só cresce: o relógio do computador voltando não
+              esconde nem traz de volta ações por engano.
+            </li>
+            <li>Uma empresa que estreia na bolsa aparece assim que entra na lista da brapi.</li>
           </ul>
 
           <h3>Logos: baixados uma vez, conferidos uma vez por dia</h3>
@@ -1248,7 +1292,10 @@ docs/            Esta documentação</code></pre>
                 <tr>
                   <td><span class="etiqueta etiqueta-get">GET</span></td>
                   <td><code>/api/catalogo</code></td>
-                  <td>Ações disponíveis (busca com <code>?busca=</code>).</td>
+                  <td>
+                    Ações listadas, com setor e variação do dia, o horário da lista e o pregão a que
+                    a variação se refere (busca com <code>?busca=</code>).
+                  </td>
                 </tr>
                 <tr>
                   <td><span class="etiqueta etiqueta-get">GET</span></td>
@@ -1344,7 +1391,17 @@ docs/            Esta documentação</code></pre>
                 </tr>
                 <tr>
                   <td><code>catalogo</code></td>
-                  <td>Ações da brapi com nome, endereço do logo e último preço.</td>
+                  <td>
+                    Ações da brapi com nome, endereço do logo, último preço, setor, variação do dia
+                    e o número da última lista em que apareceram.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>catalogo_geracao</code></td>
+                  <td>
+                    Número da última lista da brapi e das duas últimas de tamanho normal, tamanho de
+                    referência e horários.
+                  </td>
                 </tr>
                 <tr>
                   <td><code>logos</code></td>
@@ -1523,13 +1580,6 @@ docs/            Esta documentação</code></pre>
               </thead>
               <tbody>
                 <tr>
-                  <td>8b</td>
-                  <td>
-                    Filtros no menu de escolha: por setor, em alta / em baixa no dia (variação da
-                    brapi) e “só as que comprei”; esconder ações que saíram da bolsa.
-                  </td>
-                </tr>
-                <tr>
                   <td>9</td>
                   <td>Setas de ganho e perda.</td>
                 </tr>
@@ -1646,7 +1696,7 @@ docs/            Esta documentação</code></pre>
         </section>
 
         <footer class="rodape">
-          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 8.</p>
+          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 8b.</p>
         </footer>
       </main>
     </div>
