@@ -167,7 +167,7 @@
               <strong>Tela de compras</strong>
               <span>Cadastrar, editar e excluir.</span>
             </li>
-            <li>
+            <li class="feita">
               <strong>Setas de ganho e perda</strong>
               <span>Preço atual comparado ao preço médio.</span>
             </li>
@@ -181,8 +181,9 @@
             <span aria-hidden="true">ℹ</span>
             <p>
               O servidor, a lógica, a grade de cotações com o rodapé, o destaque dos vizinhos, o
-              menu de escolha das ações e a tela de compras já estão prontos e testados; os filtros
-              do menu e as setas chegam nas próximas etapas. Os capítulos marcam o que já existe com
+              menu de escolha das ações com filtros, a tela de compras e as setas de ganho e perda
+              já estão prontos e testados; falta só iniciar com dois cliques (etapa 10). Os
+              capítulos marcam o que já existe com
               <span class="etiqueta etiqueta-feito">pronto</span> e o que vem depois com
               <span class="etiqueta etiqueta-pendente">próximas etapas</span>.
             </p>
@@ -401,19 +402,19 @@ docs/            Esta documentação</code></pre>
           <h2 class="titulo">
             A tela do dashboard
             <span class="etiqueta etiqueta-feito"
-              >grade, rodapé, destaque, menu e compras prontos</span
+              >grade, rodapé, destaque, menu, compras e setas prontos</span
             >
           </h2>
           <p class="resumo">
-            Grade, atualização automática, rodapé, destaque, escolha das ações e compras já
-            funcionam; as setas chegam na etapa 9.
+            Grade, atualização automática, rodapé, destaque, escolha das ações, compras e setas de
+            ganho e perda já funcionam.
           </p>
 
           <h3>Os quadrados</h3>
           <p>
-            Cada ação escolhida vira um quadrado do mesmo tamanho, com logo, código e preço atual
-            (as setas chegam na etapa 9; logo que falha vira as iniciais; preço antigo ganha o selo
-            “desatualizado”):
+            Cada ação escolhida vira um quadrado do mesmo tamanho, com logo, código e preço atual e,
+            se você comprou a ação, a seta de ganho ou perda (logo que falha vira as iniciais; preço
+            antigo ganha o selo “desatualizado”):
           </p>
           <div class="quadrado-exemplo" aria-label="Exemplos de quadrados">
             <div class="quadrado">
@@ -426,7 +427,6 @@ docs/            Esta documentação</code></pre>
             </div>
             <div class="quadrado">
               <span class="logo">B3</span><b>B3SA3</b><span class="preco">R$ 15,40</span>
-              <span class="neutra">sem compras</span>
             </div>
           </div>
           <ul>
@@ -435,8 +435,30 @@ docs/            Esta documentação</code></pre>
               preço médio.
             </li>
             <li><strong>Seta vermelha</strong> com % de perda quando está abaixo.</li>
-            <li><strong>Exatamente igual</strong>: mostra 0,00% sem seta.</li>
-            <li><strong>Sem compras</strong> registradas: só o preço.</li>
+            <li><strong>Exatamente igual</strong>: mostra 0,00% em cinza, sem seta.</li>
+            <li>
+              Diferença menor que 0,005%: a seta continua certa e o texto mostra o sinal (“▼
+              -0,00%”), para não parecer zero.
+            </li>
+            <li><strong>Sem compras</strong> registradas: só o preço (como B3SA3 acima).</li>
+            <li>
+              Sem cotação, nenhuma seta; com preço “desatualizado”, a seta usa o último preço
+              conhecido.
+            </li>
+            <li>
+              Passando o mouse sobre a seta: preço médio e quantidade. O leitor de tela ouve, por
+              exemplo, “ganho sobre o preço médio: +4,21%, Preço médio R$ 16,73 · 150 ações”.
+            </li>
+            <li>
+              As setas mudam na hora quando você registra, altera ou exclui uma compra, e são
+              relidas a cada atualização das cotações (compras feitas em outra aba aparecem).
+            </li>
+            <li>
+              Se as compras não puderem ser lidas, a grade continua com os preços; um aviso diz que
+              as setas não aparecem (ou podem estar desatualizadas), com nova tentativa a cada
+              minuto e o botão <strong>Tentar de novo</strong>. Uma ação cujas compras o servidor
+              não conseguiu calcular mostra “compras com erro”.
+            </li>
           </ul>
 
           <h3>Telas menores</h3>
@@ -1580,10 +1602,6 @@ docs/            Esta documentação</code></pre>
               </thead>
               <tbody>
                 <tr>
-                  <td>9</td>
-                  <td>Setas de ganho e perda.</td>
-                </tr>
-                <tr>
                   <td>10</td>
                   <td><code>iniciar.bat</code>, guia de uso e teste ponta a ponta.</td>
                 </tr>
@@ -1696,7 +1714,7 @@ docs/            Esta documentação</code></pre>
         </section>
 
         <footer class="rodape">
-          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 8b.</p>
+          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 9.</p>
         </footer>
       </main>
     </div>
