@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "concurrently -n web,api -c cyan,magenta \"vite\" \"tsx watch src/server/index.ts\"",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.server.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.server.json && tsc -p tsconfig.ponta-a-ponta.json",
     "build": "npm run typecheck && vite build && node -e \"for (const d of ['dist/server', 'dist/shared']) require('fs').rmSync(d, {recursive: true, force: true})\" && tsc -p tsconfig.server.build.json",
     "start": "node dist/server/index.js",
     "test": "vitest run",

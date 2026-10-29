@@ -45,6 +45,18 @@ export default defineConfig(({ mode }) => {
             environment: 'node',
           },
         },
+        {
+          extends: true,
+          test: {
+            name: 'ponta-a-ponta',
+            include: ['src/ponta-a-ponta/**/*.test.{ts,tsx}'],
+            environment: 'jsdom',
+          },
+        },
+        {
+          extends: true,
+          test: { name: 'scripts', include: ['scripts/**/*.test.mjs'], environment: 'node' },
+        },
       ],
     },
   };
