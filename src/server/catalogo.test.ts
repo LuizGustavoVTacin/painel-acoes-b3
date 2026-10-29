@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarApp } from './app.js';
 import { abrirBanco, type Banco } from './banco/conexao.js';
 import { criarRepositorioUsoApi } from './banco/usoApi.js';
-import { criarServicoCatalogo } from './catalogo.js';
+import { avaliarTamanhoDaLista, criarServicoCatalogo, REGUA_INICIAL } from './catalogo.js';
 import { URL_LISTA_BRAPI } from './externo/brapi.js';
 import { ErroFonte } from './externo/erroFonte.js';
 import { criarEstadoFontes } from './externo/estadoFontes.js';
@@ -63,7 +63,7 @@ describe('catálogo', () => {
       { ticker: 'BBAS3', nome: 'BCO BRASIL S.A.', setor: 'Finance', variacaoDoDia: -110 },
       { ticker: 'ITUB4', nome: 'ITAÚ UNIBANCO', setor: null, variacaoDoDia: null },
     ]);
-    expect(catalogo.atualizadoEm()).toBe(agora.toISOString());
+    expect(catalogo.listaAtual()).toEqual({ atualizadoEm: agora.toISOString(), pregao: null });
     expect(catalogo.precos(['BBAS3', 'PETR4'])).toEqual(
       new Map([['BBAS3', { precoCentavos: 1738, atualizadoEm: agora.toISOString() }]]),
     );
@@ -382,6 +382,7 @@ describe('rotas de catálogo, logos e fontes', () => {
         },
       ],
       atualizadoEm: agora.toISOString(),
+      variacaoDoPregao: null,
     });
   });
 
@@ -391,7 +392,7 @@ describe('rotas de catálogo, logos e fontes', () => {
     const resposta = await request(app).get('/api/catalogo');
 
     expect(resposta.status).toBe(200);
-    expect(resposta.body).toEqual({ acoes: [], atualizadoEm: null });
+    expect(resposta.body).toEqual({ acoes: [], atualizadoEm: null, variacaoDoPregao: null });
   });
 
   it('GET /api/catalogo recusa busca repetida', async () => {
@@ -510,25 +511,6 @@ describe('robustez (pontos da revisão)', () => {
     expect(catalogo.listar()).toHaveLength(3);
   });
 
-  it('esconde as ações que não vieram numa lista de tamanho normal (saíram da bolsa)', async () => {
-    const acao = (stock: string, change = 1) => ({ stock, name: stock, close: 17, change });
-    const antes = json({ stocks: ['BBAS3', 'ITUB4', 'PETR4'].map((t) => acao(t)) });
-    const depois = json({ stocks: [acao('BBAS3', 2), acao('ITUB4', 3), acao('NOVA3')] });
-    const { catalogo } = montar({ [URL_LISTA_BRAPI]: [antes, depois] });
-    await catalogo.garantirAtualizado();
-    avancar(15 * MINUTO);
-
-    await catalogo.garantirAtualizado();
-
-    expect(catalogo.listar().map((a) => [a.ticker, a.variacaoDoDia])).toEqual([
-      ['BBAS3', 200],
-      ['ITUB4', 300],
-      ['NOVA3', 100],
-    ]);
-    // Continua no banco: o preço de reserva e o logo não se perdem.
-    expect(catalogo.precos(['PETR4']).get('PETR4')?.precoCentavos).toBe(1700);
-  });
-
   describe('ações que saíram da bolsa', () => {
     const DEZ = [
       'AAAA3',
@@ -542,8 +524,10 @@ describe('robustez (pontos da revisão)', () => {
       'IIII3',
       'JJJJ3',
     ];
-    const lista = (tickers: string[]) =>
-      json({ stocks: tickers.map((stock) => ({ stock, name: stock, close: 17 })) });
+    const lista = (tickers: string[], change = 1) =>
+      json({ stocks: tickers.map((stock) => ({ stock, name: stock, close: 17, change })) });
+    const listadas = (catalogo: ReturnType<typeof montar>['catalogo']) =>
+      catalogo.listar().map((a) => a.ticker);
     /** Busca as listas em sequência, 15 minutos uma depois da outra. */
     async function buscarListas(catalogo: ReturnType<typeof montar>['catalogo'], vezes: number) {
       for (let i = 0; i < vezes; i++) {
@@ -552,62 +536,96 @@ describe('robustez (pontos da revisão)', () => {
       }
     }
 
-    it('ação que volta à lista volta a aparecer', async () => {
+    it('some depois de faltar em duas listas completas seguidas; continua no banco', async () => {
       const semJ = DEZ.slice(0, 9);
-      const { catalogo } = montar({ [URL_LISTA_BRAPI]: [lista(DEZ), lista(semJ), lista(DEZ)] });
+      const { catalogo } = montar({ [URL_LISTA_BRAPI]: [lista(DEZ), lista(semJ), lista(semJ)] });
 
       await buscarListas(catalogo, 2);
-      expect(catalogo.listar().map((a) => a.ticker)).toEqual(semJ);
+      expect(listadas(catalogo)).toEqual(DEZ);
 
       avancar(15 * MINUTO);
       await catalogo.garantirAtualizado();
-      expect(catalogo.listar()).toHaveLength(10);
+      expect(listadas(catalogo)).toEqual(semJ);
+      // O preço de reserva e o logo não se perdem.
+      expect(catalogo.precos(['JJJJ3']).get('JJJJ3')?.precoCentavos).toBe(1700);
     });
 
-    it('lista com menos de 90% das ações avisa e não esconde nada', async () => {
-      const { catalogo, estado } = montar({
-        [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ.slice(0, 8))],
-      });
+    it('ação que falta numa única lista não some, e volta a ter variação', async () => {
+      const semJ = DEZ.slice(0, 9);
+      const { catalogo } = montar({ [URL_LISTA_BRAPI]: [lista(DEZ), lista(semJ), lista(DEZ, 2)] });
 
       await buscarListas(catalogo, 2);
+      // Sem a variação de outra lista: a de agora não trouxe JJJJ3.
+      expect(catalogo.listar().find((a) => a.ticker === 'JJJJ3')?.variacaoDoDia).toBeNull();
 
-      expect(catalogo.listar()).toHaveLength(10);
+      avancar(15 * MINUTO);
+      await catalogo.garantirAtualizado();
+      expect(catalogo.listar().find((a) => a.ticker === 'JJJJ3')?.variacaoDoDia).toBe(200);
+    });
+
+    it('lista com menos de 90% avisa e não esconde nada', async () => {
+      const oito = DEZ.slice(0, 8);
+      const { catalogo, estado } = montar({
+        [URL_LISTA_BRAPI]: [lista(DEZ), lista(oito), lista(oito)],
+      });
+
+      await buscarListas(catalogo, 3);
+
+      expect(listadas(catalogo)).toEqual(DEZ);
       expect(estado.consultar('brapi')?.mensagem).toBe(
         'A brapi devolveu menos ações que o normal (8 de 10)',
       );
     });
 
-    it('cortes seguidos na lista não escondem ações aos poucos', async () => {
+    it('cortes seguidos de tamanhos diferentes nunca escondem ações', async () => {
       const { catalogo, estado } = montar({
-        [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ.slice(0, 6)), lista(DEZ.slice(0, 4))],
+        [URL_LISTA_BRAPI]: [6, 4, 2, 3].map((n) => lista(DEZ.slice(0, n))),
       });
 
-      await buscarListas(catalogo, 3);
+      await buscarListas(catalogo, 4);
 
-      // A régua continua sendo as 10 listadas, não as 6 da lista anterior.
-      expect(catalogo.listar()).toHaveLength(10);
-      expect(estado.consultar('brapi')?.mensagem).toBe(
-        'A brapi devolveu menos ações que o normal (4 de 10)',
-      );
+      expect(catalogo.listar()).toHaveLength(6);
+      expect(estado.consultar('brapi')?.mensagem).toMatch(/menos ações que o normal \(\d de 6\)/);
     });
 
-    it('depois de uma lista cortada, a próxima normal esconde só as ausentes', async () => {
-      const { catalogo } = montar({
-        [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ.slice(0, 3)), lista(DEZ.slice(1))],
+    it('três listas menores de tamanho estável viram o novo normal (a brapi mudou)', async () => {
+      const oito = DEZ.slice(0, 8);
+      const { catalogo, estado } = montar({
+        [URL_LISTA_BRAPI]: [lista(DEZ), lista(oito), lista(oito), lista(oito), lista(oito)],
       });
 
-      await buscarListas(catalogo, 3);
+      await buscarListas(catalogo, 4);
+      expect(estado.consultar('brapi')?.mensagem).toBeNull();
+      // Aceita como completa, mas uma ausência só esconde na segunda lista completa.
+      expect(listadas(catalogo)).toEqual(DEZ);
 
-      expect(catalogo.listar().map((a) => a.ticker)).toEqual(DEZ.slice(1));
+      avancar(15 * MINUTO);
+      await catalogo.garantirAtualizado();
+      expect(listadas(catalogo)).toEqual(oito);
+    });
+
+    it('a régua é o tamanho da última lista completa, não as linhas antigas do banco', async () => {
+      // Banco com ações de antes desta versão (nunca vistas numa lista numerada).
+      banco.exec(`INSERT INTO catalogo (ticker, nome, atualizado_em) VALUES
+        ('VELH3', 'Velha', '2026-01-01T00:00:00.000Z'), ('ANTI3', 'Antiga', '2026-01-01T00:00:00.000Z')`);
+      const { catalogo, estado } = montar({ [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ)] });
+
+      await buscarListas(catalogo, 2);
+
+      expect(estado.consultar('brapi')?.mensagem).toBeNull();
+      expect(listadas(catalogo)).toEqual(DEZ);
     });
 
     it('o relógio voltando não esconde ações que vieram na lista', async () => {
+      const semJ = DEZ.slice(0, 9);
       const { catalogo } = montar({
-        [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ.slice(0, 9)), lista(DEZ)],
+        [URL_LISTA_BRAPI]: [lista(DEZ), lista(semJ), lista(semJ), lista(DEZ)],
       });
       await catalogo.garantirAtualizado();
-      avancar(-3 * HORA);
-      await catalogo.garantirAtualizado();
+      for (let i = 0; i < 2; i++) {
+        avancar(-3 * HORA);
+        await catalogo.garantirAtualizado();
+      }
       expect(catalogo.listar()).toHaveLength(9);
 
       avancar(-3 * HORA);
@@ -616,27 +634,79 @@ describe('robustez (pontos da revisão)', () => {
       expect(catalogo.listar()).toHaveLength(10);
     });
 
-    it('ação recusada pelo banco continua listada se veio na lista', async () => {
-      const { catalogo } = montar({ [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ)] });
+    it('ação recusada pelo banco continua listada, sem a variação antiga', async () => {
+      const { catalogo, estado } = montar({
+        [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ), lista(DEZ)],
+      });
       await catalogo.garantirAtualizado();
       banco.exec(`CREATE TEMP TRIGGER recusa_jjjj BEFORE INSERT ON catalogo
         WHEN NEW.ticker = 'JJJJ3' BEGIN SELECT RAISE(ABORT, 'recusado'); END`);
-      avancar(15 * MINUTO);
 
-      await catalogo.garantirAtualizado();
+      await buscarListas(catalogo, 3);
 
       expect(catalogo.listar()).toHaveLength(10);
+      expect(catalogo.listar().find((a) => a.ticker === 'JJJJ3')?.variacaoDoDia).toBeNull();
+      // A recusa é do banco local: não conta como lista encolhida.
+      expect(estado.consultar('brapi')?.mensagem).toBe(
+        '1 ações da brapi foram ignoradas por dados inválidos',
+      );
     });
 
-    it('o horário informado é o da última lista completa', async () => {
-      const inicio = agora.toISOString();
-      const { catalogo } = montar({
-        [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ.slice(0, 2))],
-      });
+    it('informa o horário da lista mais recente', async () => {
+      const { catalogo } = montar({ [URL_LISTA_BRAPI]: [lista(DEZ), lista(DEZ.slice(0, 2))] });
 
       await buscarListas(catalogo, 2);
 
-      expect(catalogo.atualizadoEm()).toBe(inicio);
+      expect(catalogo.listaAtual().atualizadoEm).toBe(agora.toISOString());
+    });
+
+    it('a variação é do último pregão do Yahoo, se ele já tinha começado quando a lista chegou', async () => {
+      const gravarPregao = (inicio: string, fim: string) =>
+        banco
+          .prepare('INSERT OR REPLACE INTO pregao (id, inicio, fim) VALUES (1, ?, ?)')
+          .run(inicio, fim);
+      const { catalogo } = montar({ [URL_LISTA_BRAPI]: [lista(DEZ)] });
+      // Sábado, 31/10/2026, 11h em Brasília.
+      agora = new Date('2026-10-31T14:00:00Z');
+      await catalogo.garantirAtualizado();
+      expect(catalogo.listaAtual().pregao).toBeNull();
+
+      gravarPregao('2026-10-30T13:00:00Z', '2026-10-30T20:00:00Z');
+      expect(catalogo.listaAtual().pregao).toBe('2026-10-30');
+
+      // Pregão da segunda já informado, mas a lista é de antes da abertura.
+      gravarPregao('2026-11-02T13:00:00Z', '2026-11-02T20:00:00Z');
+      expect(catalogo.listaAtual().pregao).toBeNull();
+    });
+  });
+
+  describe('avaliarTamanhoDaLista', () => {
+    it('a primeira lista é completa e define o tamanho normal', () => {
+      expect(avaliarTamanhoDaLista(REGUA_INICIAL, 380)).toEqual({
+        completa: true,
+        encolheu: false,
+        regua: { tamanhoNormal: 380, encolhidasSeguidas: 0, tamanhoEncolhida: null },
+      });
+    });
+
+    it('90% ou mais do normal é completa; menos é encolhida', () => {
+      const regua = { ...REGUA_INICIAL, tamanhoNormal: 400 };
+      expect(avaliarTamanhoDaLista(regua, 360).completa).toBe(true);
+      expect(avaliarTamanhoDaLista(regua, 359)).toEqual({
+        completa: false,
+        encolheu: true,
+        regua: { tamanhoNormal: 400, encolhidasSeguidas: 1, tamanhoEncolhida: 359 },
+      });
+    });
+
+    it('a terceira encolhida estável (±2%) vira o novo normal; uma instável recomeça a conta', () => {
+      const duas = { tamanhoNormal: 400, encolhidasSeguidas: 2, tamanhoEncolhida: 340 };
+      expect(avaliarTamanhoDaLista(duas, 346).regua.tamanhoNormal).toBe(346);
+      expect(avaliarTamanhoDaLista(duas, 300).regua).toEqual({
+        tamanhoNormal: 400,
+        encolhidasSeguidas: 1,
+        tamanhoEncolhida: 300,
+      });
     });
   });
 

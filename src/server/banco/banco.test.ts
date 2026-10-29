@@ -162,6 +162,25 @@ describe('migrações', () => {
     banco.close();
   });
 
+  it('banco da versão 4 (lista marcada por horário): passa para o número de lista', () => {
+    const banco = new DatabaseSync(':memory:');
+    aplicarMigracoes(banco, MIGRACOES.slice(0, 4));
+    banco.exec(`INSERT INTO catalogo (ticker, nome, setor, variacao_centesimos, atualizado_em)
+      VALUES ('BBAS3', 'BB', 'Finance', -339, '2026-10-28T23:51:53.860Z');
+      INSERT INTO catalogo_lista (id, completa_em) VALUES (1, '2026-10-28T23:51:53.860Z');`);
+
+    aplicarMigracoes(banco);
+
+    const tabelas = banco
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'catalogo%'")
+      .all();
+    expect(tabelas).toEqual([{ name: 'catalogo' }, { name: 'catalogo_geracao' }]);
+    expect(
+      banco.prepare('SELECT ticker, variacao_centesimos, geracao FROM catalogo').all(),
+    ).toEqual([{ ticker: 'BBAS3', variacao_centesimos: -339, geracao: 0 }]);
+    banco.close();
+  });
+
   it('recusa abrir um banco criado por uma versão mais nova do app', () => {
     const arquivo = path.join(pasta, 'futuro.db');
     const banco = abrirBanco(arquivo);

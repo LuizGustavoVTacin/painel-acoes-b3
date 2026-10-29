@@ -23,6 +23,7 @@ const CATALOGO = [
   acao('VALE3', 'Vale', 'Non-Energy Minerals', null),
 ];
 const LISTA_DE = '2026-10-28T17:35:00.000Z';
+const PREGAO = '2026-10-28';
 
 /** Compra mínima no formato de GET /api/transacoes. */
 const compra = (id: number, ticker: string) => ({
@@ -56,7 +57,7 @@ function simularServidor(
     if (endereco === '/api/catalogo') {
       return rotas.catalogo
         ? rotas.catalogo(opcoes.signal)
-        : Response.json({ acoes: CATALOGO, atualizadoEm: LISTA_DE });
+        : Response.json({ acoes: CATALOGO, atualizadoEm: LISTA_DE, variacaoDoPregao: PREGAO });
     }
     if (endereco === '/api/transacoes') {
       return rotas.transacoes
@@ -591,26 +592,42 @@ describe('EscolhaAcoes: data da lista e recargas', () => {
     await screen.findByText(/Variação do dia segundo a brapi/);
   }
 
-  it('lista de hoje: "Em alta hoje", sem aviso de data', async () => {
+  it('variação do pregão de hoje: "Em alta hoje", sem aviso de data', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-28T20:00:00Z'));
     simularServidor();
     await abrir();
 
     expect(opcoes()).toContain('Em alta hoje');
-    expect(screen.queryByText(/não é de hoje/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/A variação é/)).not.toBeInTheDocument();
   });
 
-  it('lista de outro dia: os filtros perdem o "hoje" e a nota avisa', async () => {
+  it('variação de outro pregão (ex.: sábado): os filtros dizem de qual dia', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-31T15:00:00Z'));
     simularServidor();
     await abrir();
 
     expect(opcoes()).toEqual(
-      expect.arrayContaining(['Em alta na última lista', 'Em baixa na última lista']),
+      expect.arrayContaining([
+        'Em alta no pregão de 28/10/2026',
+        'Em baixa no pregão de 28/10/2026',
+      ]),
     );
-    expect(screen.getByText(/A lista não é de hoje/)).toBeInTheDocument();
+    expect(screen.getByText(/A variação é do pregão de 28\/10\/2026\./)).toBeInTheDocument();
+  });
+
+  it('pregão desconhecido: não diz "hoje", mesmo com a lista baixada hoje', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-28T20:00:00Z'));
+    simularServidor({
+      catalogo: () =>
+        Response.json({ acoes: CATALOGO, atualizadoEm: LISTA_DE, variacaoDoPregao: null }),
+    });
+    await abrir();
+
+    expect(opcoes()).toContain('Em alta na última lista');
+    expect(screen.getByText(/pode não ser do pregão de hoje/)).toBeInTheDocument();
   });
 
   it('"Que comprei" sem as compras carregadas mostra que estão carregando, não lista vazia', async () => {

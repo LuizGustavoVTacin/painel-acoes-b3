@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatarHorario, hojeEmBrasilia } from '../shared/datas';
+import { formatarData, formatarHorario, hojeEmBrasilia } from '../shared/datas';
 import { LIMITE_ACOES_SELECIONADAS } from '../shared/selecao';
 import type { Ticker } from '../shared/ticker';
 import {
@@ -44,6 +44,13 @@ async function buscarCatalogoPreenchido(signal: AbortSignal): Promise<Catalogo> 
   return catalogo;
 }
 
+/** Complemento da nota quando a variação não é do pregão de hoje. */
+function descreverPregao(pregao: string | null): string {
+  return pregao
+    ? `do pregão de ${formatarData(pregao)}`
+    : 'da última lista da brapi; pode não ser do pregão de hoje';
+}
+
 /**
  * Painel para escolher as ações da grade. As marcações são um rascunho até "Salvar":
  * cada clique não dispara uma busca de cotações.
@@ -84,8 +91,13 @@ export function EscolhaAcoes({
   );
   const setores = useMemo(() => contarSetores(acoesDoCatalogo ?? []), [acoesDoCatalogo]);
   /** A variação só é "de hoje" se a lista da brapi for de hoje (no fim de semana não é). */
-  const listaDeHoje = listaDe !== null && hojeEmBrasilia(new Date(listaDe)) === hojeEmBrasilia();
-  const quando = listaDeHoje ? 'hoje' : 'na última lista';
+  const pregao = catalogo.situacao === 'ok' ? catalogo.dados.variacaoDoPregao : null;
+  const variacaoDeHoje = pregao === hojeEmBrasilia();
+  const quando = variacaoDeHoje
+    ? 'hoje'
+    : pregao
+      ? `no pregão de ${formatarData(pregao)}`
+      : 'na última lista';
   /**
    * "Que comprei" escolhido sem as compras carregadas. A opção fica desabilitada até elas
    * chegarem e uma recarga mantém os dados; isto só evita mostrar uma lista vazia enganosa.
@@ -242,10 +254,10 @@ export function EscolhaAcoes({
       />
 
       {tickersSalvos && (
-        <p className="escolha-nota" aria-live="polite">
+        <p className="escolha-nota">
           Mostrando {itens.length} {itens.length === 1 ? 'ação' : 'ações'}.
           {listaDe && ` Variação do dia segundo a brapi (lista de ${formatarHorario(listaDe)}).`}
-          {listaDe && !listaDeHoje && ' A lista não é de hoje: a variação pode ser de outro dia.'}
+          {listaDe && !variacaoDeHoje && ` A variação é ${descreverPregao(pregao)}.`}
         </p>
       )}
 

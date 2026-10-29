@@ -160,28 +160,33 @@ describe('lerCatalogo', () => {
     expect(lerCatalogo(corpo)).toEqual({
       acoes: [{ ticker: 'BBAS3', nome: 'Banco do Brasil', setor: null, variacaoDoDia: null }],
       atualizadoEm: null,
+      variacaoDoPregao: null,
     });
   });
 
-  it('lê setor, variação do dia e o horário da lista', () => {
+  it('lê setor, variação do dia, o horário da lista e o pregão da variação', () => {
     const corpo = {
       acoes: [{ ticker: 'BBAS3', nome: 'Banco do Brasil', setor: 'Finance', variacaoDoDia: -668 }],
       atualizadoEm: '2026-10-28T17:35:00.000Z',
+      variacaoDoPregao: '2026-10-28',
     };
     expect(lerCatalogo(corpo)).toEqual({
       acoes: [{ ticker: 'BBAS3', nome: 'Banco do Brasil', setor: 'Finance', variacaoDoDia: -668 }],
       atualizadoEm: '2026-10-28T17:35:00.000Z',
+      variacaoDoPregao: '2026-10-28',
     });
   });
 
-  it('setor, variação ou horário estranhos viram vazios, sem descartar a ação', () => {
+  it('setor, variação, horário ou pregão estranhos viram vazios, sem descartar a ação', () => {
     const corpo = {
       acoes: [{ ticker: 'BBAS3', nome: 'BB', setor: 42, variacaoDoDia: 1.5 }],
       atualizadoEm: 'ontem',
+      variacaoDoPregao: '28/10/2026',
     };
     expect(lerCatalogo(corpo)).toEqual({
       acoes: [{ ticker: 'BBAS3', nome: 'BB', setor: null, variacaoDoDia: null }],
       atualizadoEm: null,
+      variacaoDoPregao: null,
     });
   });
 
@@ -232,6 +237,7 @@ describe('catálogo e seleção no servidor', () => {
     await expect(buscarCatalogo(sinal())).resolves.toEqual({
       acoes: [{ ticker: 'BBAS3', nome: 'Banco do Brasil', setor: null, variacaoDoDia: null }],
       atualizadoEm: null,
+      variacaoDoPregao: null,
     });
     expect(fetchFalso).toHaveBeenCalledWith('/api/catalogo', expect.anything());
   });

@@ -1,3 +1,4 @@
+import { hojeEmBrasilia } from '../shared/datas.js';
 import type { Centavos } from '../shared/dinheiro.js';
 import { filtrarAcoes, type AcaoListada } from '../shared/selecao.js';
 import type { Ticker } from '../shared/ticker.js';
@@ -21,19 +22,80 @@ const DOWNLOADS_SIMULTANEOS = 4;
 const LIMITE_LOGO_BYTES = 200 * 1024;
 const TIPOS_DE_LOGO = new Set(['image/svg+xml', 'image/png']);
 /**
- * Saídas da bolsa são poucas por dia: uma lista com menos de 90% das ações listadas indica corte
- * ou mudança na API. Ela é guardada (com aviso), mas não esconde nenhuma ação.
+ * Saídas da bolsa são poucas por dia: uma lista com menos de 90% do tamanho da última lista
+ * completa indica corte ou mudança na API. Ela é guardada (com aviso), mas não esconde nada.
  */
 const FRACAO_MINIMA_DA_LISTA = 0.9;
-const listaEncolheu = (gravados: number, conhecidas: number) =>
-  gravados < conhecidas * FRACAO_MINIMA_DA_LISTA;
-/** Ações vistas na última lista completa (ou todas, se ainda não houve uma). */
-const SOMENTE_LISTADAS = `geracao >= coalesce((SELECT completa FROM catalogo_geracao), 0)`;
+/**
+ * Listas menores seguidas, de tamanho estável (até 2% de diferença), viram o novo normal:
+ * a brapi mudou de vez. Cortes progressivos (400 → 220 → 120) nunca são aceitos.
+ */
+const LISTAS_PARA_NOVO_TAMANHO = 3;
+const VARIACAO_DE_TAMANHO_ESTAVEL = 0.02;
+/**
+ * Ações vistas numa das duas últimas listas completas (ou todas, antes de haver duas): uma ação
+ * que falte numa única lista não some do menu.
+ */
+const SOMENTE_LISTADAS = `geracao >= coalesce((SELECT completa_anterior FROM catalogo_geracao), 0)`;
 
-interface Geracao {
+/** Régua de tamanho que decide se uma lista nova é completa. */
+export interface ReguaDaLista {
+  /** Tamanho da última lista completa; null antes da primeira. */
+  tamanhoNormal: number | null;
+  encolhidasSeguidas: number;
+  tamanhoEncolhida: number | null;
+}
+
+export const REGUA_INICIAL: ReguaDaLista = {
+  tamanhoNormal: null,
+  encolhidasSeguidas: 0,
+  tamanhoEncolhida: null,
+};
+
+/**
+ * Diz se uma lista com `tamanho` ações vale como lista completa da B3 e devolve a régua nova.
+ * `encolheu` indica uma lista menor que o normal que não foi aceita (merece aviso).
+ */
+export function avaliarTamanhoDaLista(
+  regua: ReguaDaLista,
+  tamanho: number,
+): { completa: boolean; encolheu: boolean; regua: ReguaDaLista } {
+  const { tamanhoNormal, tamanhoEncolhida, encolhidasSeguidas } = regua;
+  const completaNova = {
+    completa: true,
+    encolheu: false,
+    regua: { tamanhoNormal: tamanho, encolhidasSeguidas: 0, tamanhoEncolhida: null },
+  };
+  if (tamanhoNormal === null || tamanho >= tamanhoNormal * FRACAO_MINIMA_DA_LISTA) {
+    return completaNova;
+  }
+  const estavel =
+    tamanhoEncolhida !== null &&
+    Math.abs(tamanho - tamanhoEncolhida) <= tamanhoEncolhida * VARIACAO_DE_TAMANHO_ESTAVEL;
+  const seguidas = estavel ? encolhidasSeguidas + 1 : 1;
+  if (seguidas >= LISTAS_PARA_NOVO_TAMANHO) return completaNova;
+  return {
+    completa: false,
+    encolheu: true,
+    regua: { tamanhoNormal, encolhidasSeguidas: seguidas, tamanhoEncolhida: tamanho },
+  };
+}
+
+interface LinhaGeracao {
   geracao: number;
   completa: number;
+  completa_anterior: number;
   completa_em: string | null;
+  tamanho_normal: number | null;
+  encolhidas_seguidas: number;
+  tamanho_encolhida: number | null;
+  ultima_em: string | null;
+}
+
+interface ResultadoDaLista {
+  gravados: number;
+  /** Lista menor que o normal, não aceita: o tamanho de referência, para o aviso. */
+  encolheuDe: number | null;
 }
 const FALHAS_DE_FORMATO_PARA_ALERTA = 5;
 const AVISO_FALHA_LOCAL = 'A brapi respondeu, mas o banco local não salvou os dados';
@@ -105,20 +167,28 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
        variacao_centesimos = excluded.variacao_centesimos, geracao = excluded.geracao,
        atualizado_em = excluded.atualizado_em`,
   );
-  const marcarVista = banco.prepare('UPDATE catalogo SET geracao = ? WHERE ticker = ?');
-  const lerGeracao = banco.prepare(
-    'SELECT geracao, completa, completa_em FROM catalogo_geracao WHERE id = 1',
+  // Veio na lista mas o banco recusou os dados novos: continua listada, sem a variação antiga.
+  const marcarVista = banco.prepare(
+    'UPDATE catalogo SET geracao = ?, variacao_centesimos = NULL WHERE ticker = ?',
   );
+  // A variação do dia vale só para quem veio na lista mais recente.
+  const limparVariacoesAntigas = banco.prepare(
+    'UPDATE catalogo SET variacao_centesimos = NULL WHERE geracao < ? AND variacao_centesimos IS NOT NULL',
+  );
+  const lerGeracao = banco.prepare('SELECT * FROM catalogo_geracao WHERE id = 1');
   const gravarGeracao = banco.prepare(
-    `INSERT INTO catalogo_geracao (id, geracao, completa, completa_em)
-     VALUES (1, :geracao, :completa, :completaEm)
+    `INSERT INTO catalogo_geracao (id, geracao, completa, completa_anterior, completa_em,
+       tamanho_normal, encolhidas_seguidas, tamanho_encolhida, ultima_em)
+     VALUES (1, :geracao, :completa, :completaAnterior, :completaEm,
+       :tamanhoNormal, :encolhidasSeguidas, :tamanhoEncolhida, :ultimaEm)
      ON CONFLICT (id) DO UPDATE SET geracao = excluded.geracao, completa = excluded.completa,
-       completa_em = excluded.completa_em`,
+       completa_anterior = excluded.completa_anterior, completa_em = excluded.completa_em,
+       tamanho_normal = excluded.tamanho_normal,
+       encolhidas_seguidas = excluded.encolhidas_seguidas,
+       tamanho_encolhida = excluded.tamanho_encolhida, ultima_em = excluded.ultima_em`,
   );
+  const buscarInicioDoPregao = banco.prepare('SELECT inicio FROM pregao WHERE id = 1');
   const contarItens = banco.prepare('SELECT count(*) AS total FROM catalogo');
-  const contarListadas = banco.prepare(
-    `SELECT count(*) AS total FROM catalogo WHERE ${SOMENTE_LISTADAS}`,
-  );
   const listarItens = banco.prepare(
     `SELECT ticker, nome, setor, variacao_centesimos AS variacaoDoDia FROM catalogo
      WHERE ${SOMENTE_LISTADAS} ORDER BY ticker`,
@@ -151,12 +221,13 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
    * Grava os itens um a um: um item recusado por uma regra do banco não impede os demais.
    * Outros erros (disco cheio, banco travado) desfazem a transação e são lançados.
    * Cada lista recebe um número novo; uma de tamanho normal passa a valer como a lista atual da
-   * B3, e as ações que não vieram nela deixam de ser listadas.
+   * B3, e as ações que faltaram nela e na completa anterior deixam de ser listadas.
    */
-  function salvarItens(itens: { ticker: Ticker }[], momento: Date, conhecidas: number): number {
+  function salvarItens(itens: { ticker: Ticker }[], momento: Date): ResultadoDaLista {
     let gravados = 0;
+    let encolheuDe: number | null = null;
     emTransacao(banco, () => {
-      const anterior = lerGeracao.get() as Geracao | undefined;
+      const anterior = lerGeracao.get() as LinhaGeracao | undefined;
       const geracao = (anterior?.geracao ?? 0) + 1;
       for (const item of itens) {
         try {
@@ -165,18 +236,34 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
         } catch (erro) {
           if (!ehViolacaoDeRegra(erro)) throw erro;
           console.warn(`Ação ${item.ticker} ignorada no catálogo:`, (erro as Error).message);
-          // Veio na lista: continua listada, com os dados antigos.
           marcarVista.run(geracao, item.ticker);
         }
       }
-      const completa = !listaEncolheu(gravados, conhecidas);
+      limparVariacoesAntigas.run(geracao);
+
+      // Conta o que a brapi mandou (inclusive o que o banco recusou): a régua mede a API.
+      const regua = anterior
+        ? {
+            tamanhoNormal: anterior.tamanho_normal,
+            encolhidasSeguidas: anterior.encolhidas_seguidas,
+            tamanhoEncolhida: anterior.tamanho_encolhida,
+          }
+        : REGUA_INICIAL;
+      const avaliacao = avaliarTamanhoDaLista(regua, itens.length);
+      if (avaliacao.encolheu) encolheuDe = regua.tamanhoNormal;
+      const iso = momento.toISOString();
       gravarGeracao.run({
         geracao,
-        completa: completa ? geracao : (anterior?.completa ?? 0),
-        completaEm: completa ? momento.toISOString() : (anterior?.completa_em ?? null),
+        completa: avaliacao.completa ? geracao : (anterior?.completa ?? 0),
+        completaAnterior: avaliacao.completa
+          ? (anterior?.completa ?? 0)
+          : (anterior?.completa_anterior ?? 0),
+        completaEm: avaliacao.completa ? iso : (anterior?.completa_em ?? null),
+        ...avaliacao.regua,
+        ultimaEm: iso,
       });
     });
-    return gravados;
+    return { gravados, encolheuDe };
   }
 
   async function atualizarCatalogo(): Promise<void> {
@@ -189,11 +276,10 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
     ultimaChamadaCatalogo = momento.toISOString();
     contarUso(uso, 'brapi', momento);
     try {
-      const conhecidas = (contarListadas.get() as { total: number }).total;
       const { itens, avisoDeCobranca } = await buscarListaBrapi(buscar, momento);
-      let gravados: number;
+      let resultado: ResultadoDaLista;
       try {
-        gravados = salvarItens(itens, momento, conhecidas);
+        resultado = salvarItens(itens, momento);
       } catch (erro) {
         // Problema do banco local, não da API: a brapi respondeu bem.
         console.error('Não foi possível salvar o catálogo no banco:', erro);
@@ -203,10 +289,11 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
         return;
       }
 
+      const { gravados, encolheuDe } = resultado;
       const aviso = avisoDeCobranca
         ? AVISO_DE_COBRANCA
-        : listaEncolheu(gravados, conhecidas)
-          ? `A brapi devolveu menos ações que o normal (${gravados} de ${conhecidas})`
+        : encolheuDe !== null
+          ? `A brapi devolveu menos ações que o normal (${itens.length} de ${encolheuDe})`
           : gravados < itens.length
             ? `${itens.length - gravados} ações da brapi foram ignoradas por dados inválidos`
             : null;
@@ -305,9 +392,17 @@ export function criarServicoCatalogo({ banco, buscar, agora, estado, uso }: Depe
       return filtrarAcoes(listarItens.all() as unknown as AcaoListada[], busca);
     },
 
-    /** Quando chegou a última lista completa da brapi (a da variação do dia); null se nunca. */
-    atualizadoEm(): string | null {
-      return (lerGeracao.get() as Geracao | undefined)?.completa_em ?? null;
+    /**
+     * Horário da lista mais recente (a da variação do dia) e o dia do pregão a que a variação
+     * se refere: o último pregão informado pelo Yahoo, se já tinha começado quando a lista
+     * chegou. Sem essa informação, `pregao` é null (a tela não diz "hoje").
+     */
+    listaAtual(): { atualizadoEm: string | null; pregao: string | null } {
+      const atualizadoEm = (lerGeracao.get() as LinhaGeracao | undefined)?.ultima_em ?? null;
+      const inicio = (buscarInicioDoPregao.get() as { inicio: string } | undefined)?.inicio;
+      const pregao =
+        atualizadoEm && inicio && inicio <= atualizadoEm ? hojeEmBrasilia(new Date(inicio)) : null;
+      return { atualizadoEm, pregao };
     },
 
     /** Último preço da brapi para cada ticker que tiver preço no catálogo. */

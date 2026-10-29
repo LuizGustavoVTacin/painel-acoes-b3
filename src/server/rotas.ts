@@ -31,7 +31,8 @@ export function criarRotasCatalogo({ catalogo }: DependenciasRotas): Router {
     const acoes = catalogo
       .listar(busca)
       .map((acao) => ({ ...acao, logo: `/api/logos/${acao.ticker}` }));
-    res.json({ acoes, atualizadoEm: catalogo.atualizadoEm() });
+    const { atualizadoEm, pregao } = catalogo.listaAtual();
+    res.json({ acoes, atualizadoEm, variacaoDoPregao: pregao });
   });
 
   return rotas;

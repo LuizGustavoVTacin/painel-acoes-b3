@@ -7,7 +7,7 @@ import type {
   SituacaoFonte,
 } from '../shared/painel';
 import type { AcaoListada } from '../shared/selecao';
-import { ehInstanteISO } from '../shared/datas';
+import { ehDataISO, ehInstanteISO } from '../shared/datas';
 import { normalizarTicker, type Ticker } from '../shared/ticker';
 import {
   conferirDadosTransacao,
@@ -215,6 +215,8 @@ export async function buscarCotacoes(signal: AbortSignal): Promise<RespostaCotac
 export interface Catalogo {
   acoes: AcaoListada[];
   atualizadoEm: string | null;
+  /** Dia do pregão a que a variação se refere (ex.: "2026-10-30"); null se não se sabe. */
+  variacaoDoPregao: string | null;
 }
 
 function lerAcaoCatalogo(valor: unknown): AcaoListada | null {
@@ -238,6 +240,10 @@ export function lerCatalogo(corpo: unknown): Catalogo {
   return {
     acoes: corpo.acoes.map(lerAcaoCatalogo).filter(presente),
     atualizadoEm: ehInstante(corpo.atualizadoEm) ? corpo.atualizadoEm : null,
+    variacaoDoPregao:
+      typeof corpo.variacaoDoPregao === 'string' && ehDataISO(corpo.variacaoDoPregao)
+        ? corpo.variacaoDoPregao
+        : null,
   };
 }
 

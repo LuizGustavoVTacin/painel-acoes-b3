@@ -122,6 +122,16 @@ export const MIGRACOES: readonly string[] = [
     completa_em TEXT
   ) STRICT;
   `,
+  `
+  -- Uma ação só sai do menu depois de faltar em duas listas completas seguidas.
+  ALTER TABLE catalogo_geracao ADD COLUMN completa_anterior INTEGER NOT NULL DEFAULT 0;
+  -- Régua de tamanho: o da última lista completa e as listas menores seguidas desde então.
+  ALTER TABLE catalogo_geracao ADD COLUMN tamanho_normal INTEGER;
+  ALTER TABLE catalogo_geracao ADD COLUMN encolhidas_seguidas INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE catalogo_geracao ADD COLUMN tamanho_encolhida INTEGER;
+  -- Horário da lista mais recente (de onde vem a variação do dia).
+  ALTER TABLE catalogo_geracao ADD COLUMN ultima_em TEXT;
+  `,
 ];
 
 export const VERSAO_ATUAL = MIGRACOES.length;

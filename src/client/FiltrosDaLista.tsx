@@ -9,7 +9,7 @@ interface PropsFiltros {
   aoMudarSetor: (setor: string) => void;
   modo: ModoEscolha;
   aoMudarModo: (modo: ModoEscolha) => void;
-  /** Complemento de "Em alta": "hoje" ou "na última lista". */
+  /** Complemento de "Em alta": "hoje", "no pregão de 30/10/2026" ou "na última lista". */
   quando: string;
   /** Situação das compras, que liberam a opção "Que comprei". */
   compras: 'carregando' | 'ok' | 'erro';
