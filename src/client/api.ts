@@ -337,23 +337,39 @@ function lerPosicao(valor: unknown): Posicao | null {
   };
 }
 
+/** Posição de cada ação comprada e as ações cujas compras não puderam ser calculadas. */
+export interface Posicoes {
+  porTicker: Map<Ticker, Posicao>;
+  /** Ações com compras que o servidor não calculou ou que chegaram inválidas. */
+  comErro: Set<Ticker>;
+}
+
 /**
- * Confere o corpo de GET /api/posicoes. Uma posição inválida é descartada sozinha (a ação
- * aparece sem seta); as que o servidor não conseguiu calcular nem vêm na lista.
+ * Confere o corpo de GET /api/posicoes. Uma posição inválida é descartada sozinha e, como as
+ * que o servidor não conseguiu calcular (`erros`), fica marcada com erro: a ação foi comprada,
+ * então não pode parecer uma ação sem compras.
  */
-export function lerPosicoes(corpo: unknown): Map<Ticker, Posicao> {
+export function lerPosicoes(corpo: unknown): Posicoes {
   if (!ehObjeto(corpo) || !ehObjeto(corpo.posicoes)) throw formatoInvalido();
-  const posicoes = new Map<Ticker, Posicao>();
+  const porTicker = new Map<Ticker, Posicao>();
+  const comErro = new Set<Ticker>();
   for (const [ticker, valor] of Object.entries(corpo.posicoes)) {
     const posicao = ehTicker(ticker) ? lerPosicao(valor) : null;
-    if (posicao) posicoes.set(ticker, posicao);
-    else descartar('posições', { ticker, valor });
+    if (posicao) {
+      porTicker.set(ticker, posicao);
+    } else {
+      descartar('posições', { ticker, valor });
+      if (ehTicker(ticker)) comErro.add(ticker);
+    }
   }
-  return posicoes;
+  if (ehObjeto(corpo.erros)) {
+    for (const ticker of Object.keys(corpo.erros)) if (ehTicker(ticker)) comErro.add(ticker);
+  }
+  return { porTicker, comErro };
 }
 
 /** Quantidade, custo total e preço médio de cada ação comprada. */
-export async function buscarPosicoes(signal: AbortSignal): Promise<Map<Ticker, Posicao>> {
+export async function buscarPosicoes(signal: AbortSignal): Promise<Posicoes> {
   return lerPosicoes(await pedirJson('/api/posicoes', { signal }));
 }
 

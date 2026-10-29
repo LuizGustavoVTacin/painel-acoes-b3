@@ -16,7 +16,15 @@ interface PropsQuadrado {
   focavel?: boolean;
   /** Compras desta ação; sem compras, o quadrado mostra só o preço. */
   posicao?: Posicao;
+  /** A ação tem compras, mas elas não puderam ser calculadas. */
+  comprasComErro?: boolean;
 }
+
+const DESCRICAO: Record<Variacao['direcao'], string> = {
+  alta: 'ganho sobre o preço médio:',
+  baixa: 'perda sobre o preço médio:',
+  neutra: 'igual ao preço médio:',
+};
 
 /** Ganho ou perda do preço atual sobre o preço médio; null se não há como calcular. */
 function ganhoOuPerda(precoCentavos: number | null, posicao?: Posicao): Variacao | null {
@@ -32,6 +40,9 @@ function ganhoOuPerda(precoCentavos: number | null, posicao?: Posicao): Variacao
 const quantasAcoes = (quantidade: number) =>
   `${quantidade.toLocaleString('pt-BR')} ${quantidade === 1 ? 'ação' : 'ações'}`;
 
+const resumoDaPosicao = (posicao: Posicao) =>
+  `Preço médio ${formatarBRL(posicao.precoMedio)} · ${quantasAcoes(posicao.quantidadeTotal)}`;
+
 /** Um quadrado da grade: logo, código, preço atual e, se houve compra, o ganho ou a perda. */
 export function QuadradoAcao({
   cotacao,
@@ -39,6 +50,7 @@ export function QuadradoAcao({
   destaque = null,
   focavel = false,
   posicao,
+  comprasComErro = false,
 }: PropsQuadrado) {
   const { ticker, precoCentavos, desatualizada } = cotacao;
   const variacao = ganhoOuPerda(precoCentavos, posicao);
@@ -90,13 +102,25 @@ export function QuadradoAcao({
         {precoCentavos === null ? 'sem cotação' : formatarBRL(precoCentavos)}
       </span>
       {variacao && posicao && (
-        <IndicadorVariacao
-          centesimos={variacao.centesimosDePercentual}
-          direcao={variacao.direcao}
-          descricao="sobre o preço médio:"
-          className="ganho-perda"
-          title={`Preço médio ${formatarBRL(posicao.precoMedio)} · ${quantasAcoes(posicao.quantidadeTotal)}`}
-        />
+        <>
+          <IndicadorVariacao
+            centesimos={variacao.centesimosDePercentual}
+            direcao={variacao.direcao}
+            descricao={DESCRICAO[variacao.direcao]}
+            className="ganho-perda"
+            title={resumoDaPosicao(posicao)}
+          />
+          {/* O title não aparece no toque nem no teclado; o leitor de tela ouve aqui. */}
+          <span className="apenas-leitor">{`, ${resumoDaPosicao(posicao)}`}</span>
+        </>
+      )}
+      {comprasComErro && (
+        <span
+          className="ganho-perda variacao-neutra"
+          title="Confira as compras desta ação em Menu → Registrar compras"
+        >
+          compras com erro
+        </span>
       )}
       {desatualizada && <span className="selo-desatualizado">desatualizado</span>}
     </li>

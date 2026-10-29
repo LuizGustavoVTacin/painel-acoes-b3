@@ -442,7 +442,7 @@ describe('App', () => {
       await avancar();
 
       const indicador = quadrado('BBAS3').querySelector('.ganho-perda')!;
-      expect(indicador).toHaveTextContent(/^sobre o preço médio: 0,00%$/);
+      expect(indicador).toHaveTextContent(/^igual ao preço médio: 0,00%$/);
       expect(indicador).toHaveClass('variacao-neutra');
     });
 
@@ -467,9 +467,13 @@ describe('App', () => {
       render(<App />);
       await avancar();
 
-      expect(quadrado('BBAS3')).toHaveTextContent('sobre o preço médio: ▲ +15,87%');
-      const seta = quadrado('BBAS3').querySelector('.ganho-perda [aria-hidden="true"]');
-      expect(seta).toHaveTextContent('▲');
+      // O que o leitor ouve: o texto sem as partes escondidas dele (a seta).
+      const copia = quadrado('BBAS3').cloneNode(true) as HTMLElement;
+      copia.querySelectorAll('[aria-hidden="true"]').forEach((no) => no.remove());
+      expect(copia.textContent).toContain(
+        'ganho sobre o preço médio: +15,87%, Preço médio R$ 15,00 · 100 ações',
+      );
+      expect(quadrado('PETR4').textContent).not.toContain('perda');
     });
 
     it('falha ao ler as compras: a grade continua, avisa e se recupera na próxima rodada', async () => {
@@ -501,6 +505,67 @@ describe('App', () => {
 
       expect(quadrado('BBAS3')).toHaveTextContent('+15,87%');
       expect(screen.getByText(/podem estar desatualizadas/)).toBeInTheDocument();
+    });
+
+    it('perda menor que 0,005%: seta vermelha com "-0,00%", não um zero sem sinal', async () => {
+      // 1.000 ações a R$ 17,38 com R$ 0,30 de taxas; preço atual R$ 17,38.
+      usarPosicoes({ BBAS3: pos(1000, 1738030) });
+      simularServidor(resposta());
+      render(<App />);
+      await avancar();
+
+      const indicador = quadrado('BBAS3').querySelector('.ganho-perda')!;
+      expect(indicador).toHaveTextContent('perda sobre o preço médio: ▼ -0,00%');
+      expect(indicador).toHaveClass('variacao-baixa');
+    });
+
+    it('compras que o servidor não calculou aparecem como erro, não como ação sem compra', async () => {
+      posicoesFalsas = () => Response.json({ posicoes: {}, erros: { PETR4: 'falhou' } });
+      simularServidor(resposta());
+      render(<App />);
+      await avancar();
+
+      expect(quadrado('PETR4')).toHaveTextContent('compras com erro');
+      expect(quadrado('BBAS3')).not.toHaveTextContent('compras com erro');
+    });
+
+    it('com falha, tenta de novo a cada minuto mesmo sem novas cotações; o aviso não pisca', async () => {
+      posicoesFalsas = () => new Response('erro', { status: 500 });
+      simularServidor(resposta());
+      render(<App />);
+      await avancar();
+      expect(pedidosDePosicoes).toBe(1);
+
+      await avancar(ESPERA_APOS_FALHA_MS);
+      expect(pedidosDePosicoes).toBe(2);
+      expect(screen.getByText(/Não foi possível ler suas compras/)).toBeInTheDocument();
+
+      usarPosicoes({ BBAS3: pos(100, 150000) });
+      await avancar(ESPERA_APOS_FALHA_MS);
+      expect(screen.queryByText(/Não foi possível ler suas compras/)).not.toBeInTheDocument();
+      expect(quadrado('BBAS3')).toHaveTextContent('+15,87%');
+
+      // Sem falha, não fica relendo a cada minuto.
+      await avancar(ESPERA_APOS_FALHA_MS);
+      expect(pedidosDePosicoes).toBe(3);
+    });
+
+    it('o aviso fica na tela enquanto a nova tentativa está em andamento', async () => {
+      let responder: (resposta: Response) => void = () => {};
+      posicoesFalsas = () => new Response('erro', { status: 500 });
+      simularServidor(resposta());
+      render(<App />);
+      await avancar();
+
+      posicoesFalsas = () => new Promise<Response>((resolver) => (responder = resolver));
+      fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+      await avancar();
+      expect(pedidosDePosicoes).toBe(2);
+      expect(screen.getByText(/Não foi possível ler suas compras/)).toBeInTheDocument();
+
+      responder(Response.json({ posicoes: {}, erros: {} }));
+      await avancar();
+      expect(screen.queryByText(/Não foi possível ler suas compras/)).not.toBeInTheDocument();
     });
 
     it('as posições são lidas na abertura e de novo a cada rodada de cotações', async () => {

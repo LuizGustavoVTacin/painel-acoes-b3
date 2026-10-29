@@ -437,6 +437,18 @@ describe('RegistroCompras', () => {
     await waitFor(() => expect(aoMudarCompras).toHaveBeenCalledTimes(3));
   });
 
+  it('excluir uma compra que já não existia (404) também avisa a grade', async () => {
+    const servidor = simularServidor({ compras: [compra(1), compra(2, { ticker: 'VALE3' })] });
+    const aoMudarCompras = vi.fn();
+    await abrirPainel({ aoMudarCompras });
+
+    servidor.apagar(2);
+    fireEvent.click(screen.getByRole('button', { name: /Excluir a compra de VALE3/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, excluir' }));
+
+    await waitFor(() => expect(aoMudarCompras).toHaveBeenCalledTimes(1));
+  });
+
   it('uma gravação recusada não avisa a grade', async () => {
     simularServidor();
     const aoMudarCompras = vi.fn();

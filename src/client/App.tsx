@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { formatarHorario } from '../shared/datas';
 import { buscarPosicoes } from './api';
+import { ESPERA_APOS_FALHA_MS } from './agenda';
 import { textoMercado, ultimaAtualizacao } from './apresentacao';
 import { GradeAcoes } from './GradeAcoes';
 import { MenuPrincipal } from './MenuPrincipal';
@@ -22,8 +23,19 @@ export function App({ tempoLimiteMs }: PropsApp) {
   useEffect(() => {
     if (recebimentos > 1) recarregarPosicoes();
   }, [recebimentos, recarregarPosicoes]);
-  const semPosicoes =
-    posicoes.situacao === 'erro' || (posicoes.situacao === 'ok' && posicoes.desatualizada);
+  // A falha vale até uma leitura dar certo: o aviso não some durante a nova tentativa.
+  const [falhaNasPosicoes, setFalhaNasPosicoes] = useState(false);
+  const falhou =
+    posicoes.situacao === 'erro' || (posicoes.situacao === 'ok' && !!posicoes.desatualizada);
+  const leu = posicoes.situacao === 'ok' && !posicoes.desatualizada;
+  if (falhou && !falhaNasPosicoes) setFalhaNasPosicoes(true);
+  if (leu && falhaNasPosicoes) setFalhaNasPosicoes(false);
+  // Com falha, tenta de novo a cada minuto, sem depender das cotações darem certo.
+  useEffect(() => {
+    if (!falhaNasPosicoes) return;
+    const repetir = setInterval(recarregarPosicoes, ESPERA_APOS_FALHA_MS);
+    return () => clearInterval(repetir);
+  }, [falhaNasPosicoes, recarregarPosicoes]);
 
   let conteudo = null;
   if (dados && dados.cotacoes.length === 0) {
@@ -61,13 +73,16 @@ export function App({ tempoLimiteMs }: PropsApp) {
           {erro}.{dados ? ' Mostrando os últimos dados recebidos.' : ' Nova tentativa em 1 minuto.'}
         </p>
       )}
-      {semPosicoes && (
+      {falhaNasPosicoes && (
         <p role="status" className="aviso-compras">
           Não foi possível ler suas compras;{' '}
           {posicoes.situacao === 'ok'
             ? 'as setas de ganho e perda podem estar desatualizadas.'
             : 'as setas de ganho e perda não aparecem.'}{' '}
-          Nova tentativa na próxima atualização.
+          Nova tentativa em 1 minuto.{' '}
+          <button type="button" onClick={recarregarPosicoes}>
+            Tentar de novo
+          </button>
         </p>
       )}
       <main className="principal">{conteudo}</main>

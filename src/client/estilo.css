@@ -125,6 +125,14 @@ body {
   flex: 1;
 }
 
+.aviso-compras {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--atencao-fundo);
+  color: var(--atencao);
+}
+
 /* Texto só para leitores de tela. */
 .apenas-leitor {
   position: absolute;
@@ -162,6 +170,9 @@ body {
   min-height: 0;
   overflow: hidden;
   padding: 10px;
+  /* Altura de linha e fontes fixas: a seta e o selo cabem no quadrado de 150px. */
+  line-height: 1.2;
+  font-size: 16px;
   border: 1px solid var(--borda);
   border-radius: 12px;
   background: var(--superficie);

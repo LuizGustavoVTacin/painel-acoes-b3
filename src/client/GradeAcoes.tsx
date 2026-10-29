@@ -9,7 +9,7 @@ import {
   type SyntheticEvent,
 } from 'react';
 import type { Cotacao } from '../shared/painel';
-import type { Posicao } from '../shared/posicao';
+import type { Posicoes } from './api';
 import type { Ticker } from '../shared/ticker';
 import { QuadradoAcao, type Destaque } from './QuadradoAcao';
 import { useColunas, usePodePassarPorCima } from './useLayoutGrade';
@@ -26,7 +26,7 @@ interface PropsGrade {
   cotacoes: readonly Cotacao[];
   rodada: number;
   /** Posição de cada ação comprada (para a seta de ganho ou perda). */
-  posicoes?: ReadonlyMap<Ticker, Posicao>;
+  posicoes?: Posicoes;
 }
 
 /** Ticker do quadrado onde o evento aconteceu (o evento é tratado na grade, por delegação). */
@@ -210,7 +210,8 @@ export function GradeAcoes({ cotacoes, rodada, posicoes }: PropsGrade) {
             rodada={rodada}
             destaque={destaqueDe(indice)}
             focavel={cotacao.ticker === tickerFocavel}
-            posicao={posicoes?.get(cotacao.ticker)}
+            posicao={posicoes?.porTicker.get(cotacao.ticker)}
+            comprasComErro={posicoes?.comErro.has(cotacao.ticker)}
           />
         ))}
       </ul>

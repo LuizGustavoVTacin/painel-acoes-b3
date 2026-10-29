@@ -59,6 +59,13 @@ function simularServidor(
         ? rotas.catalogo(opcoes.signal)
         : Response.json({ acoes: CATALOGO, atualizadoEm: LISTA_DE, variacaoDoPregao: PREGAO });
     }
+    if (endereco === '/api/transacoes' && opcoes.method === 'POST') {
+      const dados = JSON.parse(opcoes.body as string) as Record<string, unknown>;
+      return Response.json(
+        { transacao: { ...compra(9, String(dados.ticker)), ...dados } },
+        { status: 201 },
+      );
+    }
     if (endereco === '/api/transacoes') {
       return rotas.transacoes
         ? rotas.transacoes(opcoes.signal)
@@ -638,5 +645,33 @@ describe('EscolhaAcoes: data da lista e recargas', () => {
 
     expect(screen.getByText('Carregando suas compras…')).toBeInTheDocument();
     expect(screen.queryByText(/Nenhuma ação encontrada/)).not.toBeInTheDocument();
+  });
+});
+
+describe('MenuPrincipal: compras', () => {
+  afterEach(cleanup);
+
+  it('registrar uma compra pelo menu avisa o app (as setas da grade são relidas)', async () => {
+    simularServidor();
+    const aoMudarCompras = vi.fn();
+    render(<MenuPrincipal aoSalvarSelecao={() => {}} aoMudarCompras={aoMudarCompras} />);
+    abrirMenu();
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar compras' }));
+    await screen.findByRole('table', { name: 'Compras registradas' });
+
+    const valores: Record<string, string> = {
+      Código: 'BBAS3',
+      Data: '20/10/2026',
+      Quantidade: '100',
+      'Preço unitário (R$)': '15,00',
+      'Taxas (R$)': '0',
+      Plataforma: 'BTG',
+    };
+    for (const [rotulo, valor] of Object.entries(valores)) {
+      fireEvent.change(screen.getByLabelText(rotulo), { target: { value: valor } });
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar compra' }));
+
+    await waitFor(() => expect(aoMudarCompras).toHaveBeenCalledTimes(1));
   });
 });

@@ -220,10 +220,13 @@ describe('lerPosicoes', () => {
     precoMedio,
   });
 
-  it('lê as posições por ação', () => {
+  it('lê as posições por ação e as ações que o servidor não conseguiu calcular', () => {
     expect(
       lerPosicoes({ posicoes: { BBAS3: pos(150, 165150, 1101) }, erros: { PETR4: 'falhou' } }),
-    ).toEqual(new Map([['BBAS3', pos(150, 165150, 1101)]]));
+    ).toEqual({
+      porTicker: new Map([['BBAS3', pos(150, 165150, 1101)]]),
+      comErro: new Set(['PETR4']),
+    });
   });
 
   it.each([
@@ -244,14 +247,20 @@ describe('lerPosicoes', () => {
         PETR4: pos(10, 38000, 3800),
       },
     };
-    expect([...lerPosicoes(corpo).keys()]).toEqual(['PETR4']);
+    const { porTicker, comErro } = lerPosicoes(corpo);
+    expect([...porTicker.keys()]).toEqual(['PETR4']);
+    // Foram compradas: aparecem com erro, não como ações sem compra (código inválido não).
+    expect([...comErro]).toEqual(['VALE3', 'ITUB4']);
   });
 
   it('buscarPosicoes consulta /api/posicoes', async () => {
     const fetchFalso = vi.fn(async () => Response.json({ posicoes: {}, erros: {} }));
     vi.stubGlobal('fetch', fetchFalso);
 
-    await expect(buscarPosicoes(new AbortController().signal)).resolves.toEqual(new Map());
+    await expect(buscarPosicoes(new AbortController().signal)).resolves.toEqual({
+      porTicker: new Map(),
+      comErro: new Set(),
+    });
     expect(fetchFalso).toHaveBeenCalledWith('/api/posicoes', expect.anything());
   });
 });
