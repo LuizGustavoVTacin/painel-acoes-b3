@@ -145,6 +145,22 @@ function preencher(valores: Record<string, string>) {
   }
 }
 
+/** Registra uma compra sem taxas: código, data, quantidade, preço unitário e plataforma. */
+function registrarCompra(
+  painel: HTMLElement,
+  [codigo, data, quantidade, preco, plataforma]: [string, string, string, string, string],
+) {
+  preencher({
+    Código: codigo,
+    Data: data,
+    Quantidade: quantidade,
+    'Preço unitário (R$)': preco,
+    'Taxas (R$)': '0',
+    Plataforma: plataforma,
+  });
+  fireEvent.click(within(painel).getByRole('button', { name: 'Registrar compra' }));
+}
+
 beforeAll(() => {
   pasta = mkdtempSync(path.join(tmpdir(), 'dashboard-ponta-a-ponta-'));
   arquivoBanco = path.join(pasta, 'dados.db');
@@ -162,28 +178,18 @@ describe('ponta a ponta: do primeiro uso à reabertura', () => {
 
     // 1. Primeiro uso: nenhuma ação escolhida.
     await abrirApp(buscar);
-    expect(
-      await screen.findByText(/Nenhuma ação selecionada/, {}, { timeout: 5000 }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Nenhuma ação selecionada/, {}, ESPERA)).toBeInTheDocument();
 
     // 2. Escolhe BBAS3 e PETR4 pelo menu: os quadrados aparecem com os preços do Yahoo.
     await escolherAcoes('BBAS3', 'PETR4');
-    await waitFor(() => expect(tickersNaGrade()).toEqual(['BBAS3', 'PETR4']), { timeout: 5000 });
+    await waitFor(() => expect(tickersNaGrade()).toEqual(['BBAS3', 'PETR4']), ESPERA);
     await waitFor(() => expect(quadrado('BBAS3')).toHaveTextContent('R$ 17,38'), ESPERA);
     expect(quadrado('PETR4')).toHaveTextContent('R$ 52,79');
     expect(quadrado('BBAS3')).not.toHaveTextContent('%');
 
     // 3. Registra uma compra de BBAS3: 100 a R$ 15,00 com R$ 0,00 de taxas → +15,87%.
     const painel = await abrirCompras();
-    preencher({
-      Código: 'BBAS3',
-      Data: '20/10/2026',
-      Quantidade: '100',
-      'Preço unitário (R$)': '15,00',
-      'Taxas (R$)': '0',
-      Plataforma: 'Itaú Íon',
-    });
-    fireEvent.click(within(painel).getByRole('button', { name: 'Registrar compra' }));
+    registrarCompra(painel, ['BBAS3', '20/10/2026', '100', '15,00', 'Itaú Íon']);
     await waitFor(() => expect(quadrado('BBAS3')).toHaveTextContent('▲ +15,87%'), ESPERA);
 
     // 4. Edita para R$ 20,00: vira perda de 13,10%.
@@ -198,21 +204,13 @@ describe('ponta a ponta: do primeiro uso à reabertura', () => {
     fireEvent.click(within(painel).getByRole('button', { name: /Excluir a compra de BBAS3/ }));
     fireEvent.click(within(painel).getByRole('button', { name: 'Sim, excluir' }));
     await waitFor(() => expect(quadrado('BBAS3')).not.toHaveTextContent('%'), ESPERA);
-    preencher({
-      Código: 'PETR4',
-      Data: '21/10/2026',
-      Quantidade: '10',
-      'Preço unitário (R$)': '60,00',
-      'Taxas (R$)': '0',
-      Plataforma: 'BTG',
-    });
-    fireEvent.click(within(painel).getByRole('button', { name: 'Registrar compra' }));
+    registrarCompra(painel, ['PETR4', '21/10/2026', '10', '60,00', 'BTG']);
     await waitFor(() => expect(quadrado('PETR4')).toHaveTextContent('▼ -12,02%'), ESPERA);
 
     // 6. Fecha tudo e abre de novo com o mesmo arquivo: seleção e compras continuam lá.
     await fecharTudo();
     await abrirApp(buscar);
-    await waitFor(() => expect(tickersNaGrade()).toEqual(['BBAS3', 'PETR4']), { timeout: 5000 });
+    await waitFor(() => expect(tickersNaGrade()).toEqual(['BBAS3', 'PETR4']), ESPERA);
     await waitFor(() => expect(quadrado('PETR4')).toHaveTextContent('▼ -12,02%'), ESPERA);
     // A edição e a exclusão também ficaram gravadas: BBAS3 sem seta e sem compra na lista.
     expect(quadrado('BBAS3')).not.toHaveTextContent('%');
