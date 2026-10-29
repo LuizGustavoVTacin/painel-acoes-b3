@@ -21,11 +21,14 @@ const servidor = criarApp({ banco, buscar: fetch, pastaCliente })
     process.exit(1);
   });
 
+/** Encerra o servidor fechando o banco direito (usado também pelo iniciador). */
+export function encerrar(codigo = 0): never {
+  servidor.close();
+  fecharBanco(banco);
+  process.exit(codigo);
+}
+
 // Fecha o banco ao encerrar: Ctrl+C (SIGINT), kill (SIGTERM) ou fechar a janela no Windows (SIGHUP).
 for (const sinal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
-  process.on(sinal, () => {
-    servidor.close();
-    fecharBanco(banco);
-    process.exit(0);
-  });
+  process.on(sinal, () => encerrar(0));
 }

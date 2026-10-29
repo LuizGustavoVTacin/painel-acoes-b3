@@ -17,6 +17,9 @@ import type { Buscar } from '../server/externo/http';
 import { json } from '../server/testes/fetchFalso';
 import { itemSpark, spark } from '../server/testes/yahooFalso';
 
+/** Ida e volta HTTP real mais a renderização: folga para máquinas carregadas. */
+const ESPERA = { timeout: 5000 };
+
 const PRECOS = { BBAS3: 17.38, PETR4: 52.79, VALE3: 61.38 } as const;
 
 const listaBrapi = () =>
@@ -56,7 +59,9 @@ interface ServidorNoAr {
 let pasta: string;
 let arquivoBanco: string;
 let noAr: ServidorNoAr | null = null;
-let relogio = new Date();
+/** Quarta-feira, 28/10/2026, 14h em Brasília: pregão aberto (o resultado não depende do dia). */
+const INICIO = new Date('2026-10-28T17:00:00Z');
+let relogio = INICIO;
 
 function ligarServidor(buscar: Buscar): Promise<ServidorNoAr> {
   const banco = abrirBanco(arquivoBanco);
@@ -88,7 +93,7 @@ function apontarFetchPara(endereco: string) {
   vi.stubGlobal('fetch', (entrada: string, opcoes: RequestInit = {}) => {
     const { signal, ...resto } = opcoes;
     const controle = new AbortController();
-    signal?.addEventListener('abort', () => controle.abort());
+    signal?.addEventListener('abort', () => controle.abort(), { once: true });
     if (signal?.aborted) controle.abort();
     return fetchDoNode(new URL(entrada, endereco), { ...resto, signal: controle.signal }).catch(
       (erro: unknown) => {
@@ -164,7 +169,7 @@ describe('ponta a ponta: do primeiro uso à reabertura', () => {
     // 2. Escolhe BBAS3 e PETR4 pelo menu: os quadrados aparecem com os preços do Yahoo.
     await escolherAcoes('BBAS3', 'PETR4');
     await waitFor(() => expect(tickersNaGrade()).toEqual(['BBAS3', 'PETR4']), { timeout: 5000 });
-    await waitFor(() => expect(quadrado('BBAS3')).toHaveTextContent('R$ 17,38'));
+    await waitFor(() => expect(quadrado('BBAS3')).toHaveTextContent('R$ 17,38'), ESPERA);
     expect(quadrado('PETR4')).toHaveTextContent('R$ 52,79');
     expect(quadrado('BBAS3')).not.toHaveTextContent('%');
 
@@ -179,7 +184,7 @@ describe('ponta a ponta: do primeiro uso à reabertura', () => {
       Plataforma: 'Itaú Íon',
     });
     fireEvent.click(within(painel).getByRole('button', { name: 'Registrar compra' }));
-    await waitFor(() => expect(quadrado('BBAS3')).toHaveTextContent('▲ +15,87%'));
+    await waitFor(() => expect(quadrado('BBAS3')).toHaveTextContent('▲ +15,87%'), ESPERA);
 
     // 4. Edita para R$ 20,00: vira perda de 13,10%.
     fireEvent.click(
@@ -187,12 +192,12 @@ describe('ponta a ponta: do primeiro uso à reabertura', () => {
     );
     preencher({ 'Preço unitário (R$)': '20,00' });
     fireEvent.click(within(painel).getByRole('button', { name: 'Salvar alterações' }));
-    await waitFor(() => expect(quadrado('BBAS3')).toHaveTextContent('▼ -13,10%'));
+    await waitFor(() => expect(quadrado('BBAS3')).toHaveTextContent('▼ -13,10%'), ESPERA);
 
     // 5. Exclui: a seta some. Registra outra para conferir a reabertura.
     fireEvent.click(within(painel).getByRole('button', { name: /Excluir a compra de BBAS3/ }));
     fireEvent.click(within(painel).getByRole('button', { name: 'Sim, excluir' }));
-    await waitFor(() => expect(quadrado('BBAS3')).not.toHaveTextContent('%'));
+    await waitFor(() => expect(quadrado('BBAS3')).not.toHaveTextContent('%'), ESPERA);
     preencher({
       Código: 'PETR4',
       Data: '21/10/2026',
@@ -202,29 +207,34 @@ describe('ponta a ponta: do primeiro uso à reabertura', () => {
       Plataforma: 'BTG',
     });
     fireEvent.click(within(painel).getByRole('button', { name: 'Registrar compra' }));
-    await waitFor(() => expect(quadrado('PETR4')).toHaveTextContent('▼ -12,02%'));
+    await waitFor(() => expect(quadrado('PETR4')).toHaveTextContent('▼ -12,02%'), ESPERA);
 
     // 6. Fecha tudo e abre de novo com o mesmo arquivo: seleção e compras continuam lá.
     await fecharTudo();
     await abrirApp(buscar);
     await waitFor(() => expect(tickersNaGrade()).toEqual(['BBAS3', 'PETR4']), { timeout: 5000 });
-    await waitFor(() => expect(quadrado('PETR4')).toHaveTextContent('▼ -12,02%'));
-    const plataforma = await abrirCompras();
-    expect(await within(plataforma).findByText('BTG')).toBeInTheDocument();
+    await waitFor(() => expect(quadrado('PETR4')).toHaveTextContent('▼ -12,02%'), ESPERA);
+    // A edição e a exclusão também ficaram gravadas: BBAS3 sem seta e sem compra na lista.
+    expect(quadrado('BBAS3')).not.toHaveTextContent('%');
+    const compras = await abrirCompras();
+    expect(await within(compras).findByText('BTG')).toBeInTheDocument();
+    expect(
+      within(compras).queryByRole('button', { name: /Editar a compra de BBAS3/ }),
+    ).not.toBeInTheDocument();
 
-    // 7. A internet cai horas depois: o último preço continua, com aviso, e a grade não quebra.
+    // 7. A internet cai 20 minutos depois (antes de o preço ficar velho pela idade): o último
+    // preço continua, o rodapé avisa a falha do Yahoo e a grade não quebra.
     await fecharTudo();
     internet.foraDoAr = true;
     const chamadasAntes = internet.chamadas.length;
-    relogio = new Date(relogio.getTime() + 3 * 60 * 60 * 1000);
+    relogio = new Date(INICIO.getTime() + 20 * 60 * 1000);
     await abrirApp(buscar);
-    await waitFor(() => expect(tickersNaGrade()).toEqual(['BBAS3', 'PETR4']), {
-      timeout: 15000,
-    });
-    await waitFor(() => expect(quadrado('BBAS3')).toHaveTextContent('desatualizado'), {
-      timeout: 15000,
-    });
-    expect(internet.chamadas.length).toBeGreaterThan(chamadasAntes);
+    await waitFor(() => expect(tickersNaGrade()).toEqual(['BBAS3', 'PETR4']), ESPERA);
+    expect(
+      await screen.findByText(/Yahoo Finance: indisponível no momento/, {}, { timeout: 15000 }),
+    ).toBeInTheDocument();
+    const novasChamadas = internet.chamadas.slice(chamadasAntes);
+    expect(novasChamadas.some((url) => url.includes('finance.yahoo.com'))).toBe(true);
     expect(quadrado('BBAS3')).toHaveTextContent('R$ 17,38');
     expect(quadrado('PETR4')).toHaveTextContent('▼ -12,02%');
   }, 60000);

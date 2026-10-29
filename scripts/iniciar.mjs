@@ -1,119 +1,98 @@
+// @ts-check
 /**
- * Abre o dashboard com dois cliques (chamado pelo iniciar.bat): confere o Node, instala as
- * dependências e compila só quando precisa, sobe o servidor e abre o navegador. Se o dashboard
- * já estiver aberto, só abre o navegador.
+ * Abre o dashboard com dois cliques (chamado pelo iniciar.bat): confere o Node, lê o .env,
+ * reconhece o dashboard já aberto (só abre o navegador), instala as dependências e compila só
+ * quando precisa, sobe o servidor e abre o navegador.
  *
- * Variáveis: PORT e DB_ARQUIVO (as mesmas do servidor) e SEM_NAVEGADOR=1 (não abre o navegador).
+ * Variáveis (do ambiente ou do .env; o ambiente vence): PORT, DB_ARQUIVO e SEM_NAVEGADOR=1.
+ * As decisões ficam em regras-iniciar.mjs, onde são testadas.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-
-export const VERSAO_MINIMA_NODE = 24;
-
-/** Arquivos fora de src/ que também mudam o resultado do build. */
-export const ARQUIVOS_DO_BUILD = [
-  'index.html',
-  'vite.config.ts',
-  'package.json',
-  'package-lock.json',
-  'tsconfig.json',
-  'tsconfig.server.json',
-  'tsconfig.server.build.json',
-];
-
-/** A versão do Node (ex.: "v24.3.0") serve para o app? */
-export function versaoNodeServe(versao) {
-  const principal = Number(/^v?(\d+)\./.exec(versao)?.[1]);
-  return principal >= VERSAO_MINIMA_NODE;
-}
-
-/**
- * Precisa rodar `npm ci`? Sim se não há node_modules ou se o package-lock.json mudou depois da
- * última instalação (o npm grava node_modules/.package-lock.json ao instalar).
- */
-export function precisaInstalar({ instaladoEm, lockEm }) {
-  return instaladoEm === null || (lockEm !== null && lockEm > instaladoEm);
-}
-
-/** Arquivo de src/ que entra no build (testes e simulações não entram). */
-export function entraNoBuild(caminhoRelativo) {
-  const caminho = caminhoRelativo.replaceAll('\\', '/');
-  return (
-    !/\.test\.[cm]?[jt]sx?$/.test(caminho) &&
-    !caminho.includes('/testes/') &&
-    !caminho.startsWith('src/ponta-a-ponta/')
-  );
-}
-
-/** Precisa compilar? Sim se não há compilação ou se alguma fonte é mais nova que ela. */
-export function precisaCompilar({ compiladoEm, fontesEm }) {
-  return compiladoEm === null || fontesEm.some((data) => data > compiladoEm);
-}
-
-/**
- * O que há na porta, pela resposta de /api/saude: o próprio dashboard, nada (porta livre) ou
- * outro programa.
- */
-export function classificarPorta(resultado) {
-  if ('erro' in resultado) return resultado.erro === 'ECONNREFUSED' ? 'livre' : 'outro';
-  const { status, corpo } = resultado;
-  const ehDashboard =
-    status === 200 && corpo !== null && typeof corpo === 'object' && corpo.status === 'ok';
-  return ehDashboard ? 'dashboard' : 'outro';
-}
-
-/** Comando que abre o endereço no navegador padrão. */
-export function comandoNavegador(endereco, plataforma) {
-  if (plataforma === 'win32') {
-    // `start` é comando interno do cmd; o "" é o título da janela, exigido antes do endereço.
-    return { programa: 'cmd.exe', argumentos: ['/c', 'start', '""', endereco], literal: true };
-  }
-  const programa = plataforma === 'darwin' ? 'open' : 'xdg-open';
-  return { programa, argumentos: [endereco], literal: false };
-}
-
-// ---------------------------------------------------------------------------------------------
+import {
+  ARQUIVOS_DO_BUILD,
+  VERSAO_MINIMA_NODE,
+  classificarPorta,
+  comandoNavegador,
+  entraNoBuild,
+  lerPorta,
+  precisaCompilar,
+  precisaInstalar,
+  versaoNodeServe,
+} from './regras-iniciar.mjs';
 
 const RAIZ = fileURLToPath(new URL('..', import.meta.url));
+const TRAVA = path.join(RAIZ, '.iniciando.lock');
 const ESPERA_SERVIDOR_MS = 30_000;
+/** Outra janela pode estar instalando as dependências pela primeira vez (alguns minutos). */
+const ESPERA_OUTRA_JANELA_MS = 10 * 60_000;
 
+/** @param {string} arquivo */
 const dataDe = (arquivo) => (existsSync(arquivo) ? statSync(arquivo).mtimeMs : null);
+
+/** @param {number} ms */
+const esperar = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
+
+/**
+ * @param {string} mensagem
+ * @returns {never}
+ */
+function falhar(mensagem) {
+  console.error(`\n${mensagem}`);
+  process.exit(1);
+}
+
+function lerEnv() {
+  try {
+    process.loadEnvFile(path.join(RAIZ, '.env'));
+  } catch (erro) {
+    if (/** @type {NodeJS.ErrnoException} */ (erro).code !== 'ENOENT') throw erro;
+  }
+}
+
+function situacaoDaInstalacao() {
+  return precisaInstalar({
+    instaladoEm: dataDe(path.join(RAIZ, 'node_modules', '.package-lock.json')),
+    lockEm: dataDe(path.join(RAIZ, 'package-lock.json')),
+  });
+}
+
+const dataDaCompilacao = () => dataDe(path.join(RAIZ, 'dist', '.compilado'));
 
 function datasDasFontes() {
   const datas = ARQUIVOS_DO_BUILD.map((arquivo) => dataDe(path.join(RAIZ, arquivo)));
+  datas.push(dataDe(path.join(RAIZ, 'src')));
   for (const item of readdirSync(path.join(RAIZ, 'src'), {
     recursive: true,
     withFileTypes: true,
   })) {
-    if (!item.isFile()) continue;
     const completo = path.join(item.parentPath, item.name);
-    if (entraNoBuild(path.relative(RAIZ, completo))) datas.push(statSync(completo).mtimeMs);
+    const relativo = path.relative(RAIZ, completo) + (item.isDirectory() ? '/' : '');
+    if (entraNoBuild(relativo)) datas.push(statSync(completo).mtimeMs);
   }
-  return datas.filter((data) => data !== null);
+  return /** @type {number[]} */ (datas.filter((data) => data !== null));
 }
 
-function dataDaCompilacao() {
-  const datas = ['dist/client/index.html', 'dist/server/index.js'].map((arquivo) =>
-    dataDe(path.join(RAIZ, arquivo)),
-  );
-  return datas.includes(null) ? null : Math.min(...datas);
-}
+const situacaoDaCompilacao = () =>
+  precisaCompilar({ compiladoEm: dataDaCompilacao(), fontesEm: datasDasFontes() });
 
-/** Roda um comando do npm mostrando a saída; encerra com aviso se falhar. */
+/**
+ * Roda um comando do npm mostrando a saída. Devolve se deu certo.
+ * @param {string[]} argumentos
+ * @param {string} explicacao
+ */
 function rodarNpm(argumentos, explicacao) {
   console.log(`\n${explicacao}\n`);
   // No Windows o npm é um .cmd, que o Node só executa pelo shell; os argumentos são fixos,
   // então vão numa linha só (passá-los em lista com shell gera aviso de depreciação).
   const comando = ['npm', ...argumentos].join(' ');
   const { status } = spawnSync(comando, { cwd: RAIZ, stdio: 'inherit', shell: true });
-  if (status !== 0) {
-    console.error(`\nNão deu certo (npm ${argumentos.join(' ')}). Veja as mensagens acima.`);
-    process.exit(1);
-  }
+  return status === 0;
 }
 
+/** @param {number} porta */
 async function consultarPorta(porta) {
   try {
     const resposta = await fetch(`http://127.0.0.1:${porta}/api/saude`, {
@@ -122,10 +101,38 @@ async function consultarPorta(porta) {
     const corpo = await resposta.json().catch(() => null);
     return classificarPorta({ status: resposta.status, corpo });
   } catch (erro) {
-    return classificarPorta({ erro: erro?.cause?.code ?? erro?.name ?? 'desconhecido' });
+    const { cause, name } = /** @type {{ cause?: { code?: string }, name?: string }} */ (erro);
+    return classificarPorta({ erro: cause?.code ?? name ?? 'desconhecido' });
   }
 }
 
+/**
+ * Consulta de novo quando nada responde a tempo: um dashboard ocupado pode demorar.
+ * @param {number} porta
+ */
+async function consultarPortaComPaciencia(porta) {
+  let situacao = await consultarPorta(porta);
+  for (let tentativa = 1; situacao === 'sem_resposta' && tentativa < 3; tentativa++) {
+    situacao = await consultarPorta(porta);
+  }
+  return situacao;
+}
+
+/**
+ * Espera o dashboard responder na porta, até o limite.
+ * @param {number} porta
+ * @param {number} limiteMs
+ */
+async function esperarDashboard(porta, limiteMs) {
+  const limite = Date.now() + limiteMs;
+  while (Date.now() < limite) {
+    if ((await consultarPorta(porta)) === 'dashboard') return true;
+    await esperar(250);
+  }
+  return false;
+}
+
+/** @param {string} endereco */
 function abrirNavegador(endereco) {
   if (process.env.SEM_NAVEGADOR === '1') return;
   const { programa, argumentos, literal } = comandoNavegador(endereco, process.platform);
@@ -138,65 +145,123 @@ function abrirNavegador(endereco) {
   filho.unref();
 }
 
-async function esperarServidor(porta) {
-  const limite = Date.now() + ESPERA_SERVIDOR_MS;
-  while (Date.now() < limite) {
-    if ((await consultarPorta(porta)) === 'dashboard') return true;
-    await new Promise((resolver) => setTimeout(resolver, 250));
+/** @param {number} pid */
+function processoVivo(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (erro) {
+    return /** @type {NodeJS.ErrnoException} */ (erro).code === 'EPERM';
   }
-  return false;
+}
+
+/**
+ * Trava contra dois cliques seguidos: só uma janela instala, compila e sobe o servidor. Uma
+ * trava deixada por uma janela que já fechou é ignorada.
+ * @returns {boolean}
+ */
+function pegarTrava(tentativas = 2) {
+  try {
+    writeFileSync(TRAVA, String(process.pid), { flag: 'wx' });
+    process.on('exit', soltarTrava);
+    return true;
+  } catch (erro) {
+    if (/** @type {NodeJS.ErrnoException} */ (erro).code !== 'EEXIST') throw erro;
+    const dono = Number(readFileSync(TRAVA, 'utf8'));
+    if (processoVivo(dono) || tentativas <= 1) return false;
+    rmSync(TRAVA, { force: true });
+    return pegarTrava(tentativas - 1);
+  }
+}
+
+function soltarTrava() {
+  try {
+    if (readFileSync(TRAVA, 'utf8') === String(process.pid)) rmSync(TRAVA, { force: true });
+  } catch {
+    // Já não existe.
+  }
+}
+
+/**
+ * Instala e compila quando precisa. Um build que falha com uma versão anterior pronta segue
+ * com ela (ex.: um erro de tipo numa edição em andamento).
+ */
+function prepararApp() {
+  if (situacaoDaInstalacao()) {
+    const instalou = rodarNpm(
+      ['ci'],
+      'Instalando as dependências (só na primeira vez ou após atualizar)…',
+    );
+    if (!instalou) falhar('Não foi possível instalar as dependências. Veja as mensagens acima.');
+  }
+  if (situacaoDaCompilacao()) {
+    const compilou = rodarNpm(
+      ['run', 'build'],
+      'Preparando o dashboard (só quando o código muda)…',
+    );
+    if (!compilou) {
+      if (dataDaCompilacao() === null) {
+        falhar('Não foi possível preparar o dashboard. Veja as mensagens acima.');
+      }
+      console.log('\nNão foi possível preparar a versão nova; abrindo a versão anterior.');
+    }
+  }
 }
 
 async function iniciar() {
   if (!versaoNodeServe(process.version)) {
-    console.error(
+    falhar(
       `O dashboard precisa do Node.js ${VERSAO_MINIMA_NODE} ou mais novo (este é o ${process.version}).\n` +
         'Baixe em https://nodejs.org e abra de novo.',
     );
-    process.exit(1);
   }
 
-  const instalacao = {
-    instaladoEm: dataDe(path.join(RAIZ, 'node_modules', '.package-lock.json')),
-    lockEm: dataDe(path.join(RAIZ, 'package-lock.json')),
-  };
-  if (precisaInstalar(instalacao)) {
-    rodarNpm(['ci'], 'Instalando as dependências (só na primeira vez ou após atualizar)…');
-  }
-  if (precisaCompilar({ compiladoEm: dataDaCompilacao(), fontesEm: datasDasFontes() })) {
-    rodarNpm(['run', 'build'], 'Preparando o dashboard (só quando o código muda)…');
-  }
-
-  // A mesma leitura de PORT que o servidor usa (já compilada em dist/).
-  const { lerPorta } = await import(pathToFileURL(path.join(RAIZ, 'dist/server/config.js')).href);
+  process.chdir(RAIZ);
+  lerEnv();
   const porta = lerPorta(process.env.PORT);
   const endereco = `http://localhost:${porta}`;
 
-  const naPorta = await consultarPorta(porta);
+  // Antes de instalar ou compilar: com o dashboard aberto, isso apagaria arquivos em uso.
+  const naPorta = await consultarPortaComPaciencia(porta);
   if (naPorta === 'dashboard') {
     console.log(`O dashboard já está aberto em ${endereco}. Abrindo o navegador…`);
+    if (situacaoDaInstalacao() || situacaoDaCompilacao()) {
+      console.log('Há uma versão nova do código: feche a janela do dashboard e abra de novo.');
+    }
     abrirNavegador(endereco);
     return;
   }
+  if (naPorta === 'sem_resposta') {
+    falhar(`Algo na porta ${porta} não responde. Feche-o ou escolha outra porta (PORT no .env).`);
+  }
   if (naPorta === 'outro') {
-    console.error(
+    falhar(
       `A porta ${porta} está ocupada por outro programa. Feche-o ou escolha outra porta ` +
         '(PORT no arquivo .env).',
     );
-    process.exit(1);
   }
 
-  // O servidor roda neste mesmo processo: fechar a janela o encerra e fecha o banco.
-  process.chdir(RAIZ);
-  await import(pathToFileURL(path.join(RAIZ, 'dist/server/index.js')).href);
-  if (!(await esperarServidor(porta))) {
-    console.error('O servidor não respondeu a tempo. Veja as mensagens acima.');
-    process.exit(1);
+  if (!pegarTrava()) {
+    console.log('O dashboard já está sendo aberto em outra janela. Aguardando…');
+    if (!(await esperarDashboard(porta, ESPERA_OUTRA_JANELA_MS))) {
+      falhar('A outra janela não terminou de abrir o dashboard. Veja as mensagens dela.');
+    }
+    abrirNavegador(endereco);
+    return;
   }
+
+  prepararApp();
+
+  // O servidor roda neste mesmo processo: fechar a janela o encerra e fecha o banco.
+  const servidor = await import(pathToFileURL(path.join(RAIZ, 'dist/server/index.js')).href);
+  if (!(await esperarDashboard(porta, ESPERA_SERVIDOR_MS))) {
+    console.error('\nO servidor não respondeu a tempo. Veja as mensagens acima.');
+    servidor.encerrar(1);
+  }
+  soltarTrava();
   abrirNavegador(endereco);
   console.log('\nFeche esta janela para encerrar o dashboard.');
 }
 
-const chamadoDireto =
-  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (chamadoDireto) await iniciar();
+await iniciar();

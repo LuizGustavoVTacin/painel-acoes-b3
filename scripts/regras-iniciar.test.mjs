@@ -1,12 +1,23 @@
 import { describe, expect, it } from 'vitest';
+import { lerPorta as lerPortaDoServidor } from '../src/server/config.ts';
 import {
   classificarPorta,
   comandoNavegador,
   entraNoBuild,
+  lerPorta,
   precisaCompilar,
   precisaInstalar,
   versaoNodeServe,
-} from './iniciar.mjs';
+} from './regras-iniciar.mjs';
+
+describe('lerPorta', () => {
+  it.each([undefined, '', ' 3005 ', '3001', '0', '65535', '65536', '-1', '30a', '3.5', 'abc'])(
+    'lê %j como o servidor',
+    (valor) => {
+      expect(lerPorta(valor)).toBe(lerPortaDoServidor(valor));
+    },
+  );
+});
 
 describe('versaoNodeServe', () => {
   it.each([
@@ -47,13 +58,16 @@ describe('entraNoBuild', () => {
     ['src/server/testes/fetchFalso.ts', false],
     ['src\\server\\testes\\yahooFalso.ts', false],
     ['src/ponta-a-ponta/fluxo.test.tsx', false],
+    ['src/client/', true],
+    ['src/server/testes/', false],
+    ['src/ponta-a-ponta/', false],
   ])('%s → %s', (caminho, entra) => {
     expect(entraNoBuild(caminho)).toBe(entra);
   });
 });
 
 describe('precisaCompilar', () => {
-  it('sem compilação compila', () => {
+  it('sem compilação completa (sem o marcador) compila', () => {
     expect(precisaCompilar({ compiladoEm: null, fontesEm: [1, 2] })).toBe(true);
   });
 
@@ -77,8 +91,11 @@ describe('classificarPorta', () => {
     ).toBe('dashboard');
   });
 
+  it('nada responde a tempo: sem resposta (pode ser o dashboard ocupado)', () => {
+    expect(classificarPorta({ erro: 'TimeoutError' })).toBe('sem_resposta');
+  });
+
   it.each([
-    ['tempo esgotado', { erro: 'TimeoutError' }],
     ['outro erro de rede', { erro: 'ECONNRESET' }],
     ['página que não é o dashboard', { status: 404, corpo: null }],
     ['JSON de outro programa', { status: 200, corpo: { nome: 'outro' } }],

@@ -28,7 +28,12 @@ Dê dois cliques em **`iniciar.bat`**, na pasta do projeto.
 3. Uma janela preta fica aberta enquanto o dashboard roda. **Feche essa janela para encerrar.**
 
 Nas próximas vezes abre em poucos segundos. Ele só prepara o app de novo quando o código muda.
-Se o dashboard já estiver aberto, os dois cliques só abrem o navegador de novo.
+Se o dashboard já estiver aberto, os dois cliques só abrem o navegador de novo. Se o código
+tiver mudado nesse meio-tempo, ele avisa para fechar a janela e abrir de novo. Dois cliques
+seguidos não abrem duas cópias: a segunda janela espera a primeira e só abre o navegador.
+
+Para encerrar, feche a janela. Com Ctrl+C, o Windows pergunta "Deseja finalizar o arquivo em
+lotes (S/N)?": responda S.
 
 ### Atalho na área de trabalho
 
@@ -67,14 +72,16 @@ preço médio = (soma de quantidade × preço unitário + soma das taxas) ÷ qua
 
 ## Problemas comuns
 
-| O que aparece                                                     | O que fazer                                                                                                                                 |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| "O Node.js não foi encontrado" ou "precisa do Node.js 24"         | Instale o Node.js 24 ou mais novo em <https://nodejs.org> e abra de novo.                                                                   |
-| "A porta 3000 está ocupada por outro programa"                    | Feche o outro programa, ou copie `.env.example` para `.env` e mude `PORT` (ex.: `PORT=3005`).                                               |
-| Preço com o selo "desatualizado"                                  | A fonte de cotação não respondeu. O último preço conhecido continua na tela e o app tenta de novo sozinho.                                  |
-| Rodapé avisa que uma fonte está "bloqueada" ou "mudou de formato" | A fonte passou a pedir pagamento ou mudou. O app para de chamá-la por 24 h e segue com os dados salvos. Nenhuma chave ou pagamento é usado. |
-| "Não foi possível ler suas compras"                               | A grade continua com os preços. Clique em **Tentar de novo** ou espere a nova tentativa automática, a cada minuto.                          |
-| A janela preta fechou sozinha com uma mensagem                    | Leia a mensagem: o `iniciar.bat` espera uma tecla antes de fechar quando algo dá errado.                                                    |
+| O que aparece                                                                                | O que fazer                                                                                                        |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| "O Node.js não foi encontrado" ou "precisa do Node.js 24"                                    | Instale o Node.js 24 ou mais novo em <https://nodejs.org> e abra de novo.                                          |
+| "A porta 3000 está ocupada por outro programa"                                               | Feche o outro programa, ou copie `.env.example` para `.env` e mude `PORT` (ex.: `PORT=3005`).                      |
+| Preço com o selo "desatualizado"                                                             | A fonte de cotação não respondeu. O último preço conhecido continua na tela e o app tenta de novo sozinho.         |
+| Rodapé diz que uma fonte "passou a exigir pagamento ou chave" ou "mudou o formato dos dados" | O app para de chamá-la por 24 h e segue com os dados salvos. Nenhuma chave ou pagamento é usado.                   |
+| Rodapé diz "Yahoo Finance: indisponível no momento"                                          | A fonte não respondeu. O app usa a reserva (brapi) ou os últimos dados salvos e tenta de novo sozinho.             |
+| "Não foi possível ler suas compras"                                                          | A grade continua com os preços. Clique em **Tentar de novo** ou espere a nova tentativa automática, a cada minuto. |
+| "Algo na porta 3000 não responde"                                                            | Outro programa travado ocupa a porta. Feche-o ou mude `PORT` no `.env`.                                            |
+| A janela preta mostra um erro                                                                | Leia a mensagem: quando algo dá errado, o `iniciar.bat` espera uma tecla antes de fechar.                          |
 
 ## Para quem mexe no código
 
@@ -86,7 +93,8 @@ preço médio = (soma de quantidade × preço unitário + soma das taxas) ÷ qua
 | `npm run build` | Confere os tipos e gera a versão final em `dist/`.                          |
 | `npm start`     | Serve a versão final em <http://localhost:3000> (o `iniciar.bat` faz isso). |
 
-Configuração opcional: copie `.env.example` para `.env`.
+Configuração opcional: copie `.env.example` para `.env`. As variáveis valem para o
+`iniciar.bat` e para o `npm start`; uma variável definida no ambiente vence a do `.env`.
 
 - `PORT`: porta do servidor (padrão 3000).
 - `DB_ARQUIVO`: arquivo do banco (padrão `dados.db`).
