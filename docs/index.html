@@ -171,7 +171,7 @@
               <strong>Setas de ganho e perda</strong>
               <span>Preço atual comparado ao preço médio.</span>
             </li>
-            <li>
+            <li class="feita">
               <strong>Iniciar com dois cliques</strong>
               <span><code>iniciar.bat</code>, guia de uso e teste ponta a ponta.</span>
             </li>
@@ -180,12 +180,10 @@
           <div class="aviso aviso-dica">
             <span aria-hidden="true">ℹ</span>
             <p>
-              O servidor, a lógica, a grade de cotações com o rodapé, o destaque dos vizinhos, o
-              menu de escolha das ações com filtros, a tela de compras e as setas de ganho e perda
-              já estão prontos e testados; falta só iniciar com dois cliques (etapa 10). Os
-              capítulos marcam o que já existe com
-              <span class="etiqueta etiqueta-feito">pronto</span> e o que vem depois com
-              <span class="etiqueta etiqueta-pendente">próximas etapas</span>.
+              Todas as etapas planejadas estão prontas e testadas: servidor, grade de cotações com
+              rodapé, destaque dos vizinhos, menu de escolha com filtros, tela de compras, setas de
+              ganho e perda e o <code>iniciar.bat</code>. Os capítulos marcam o que existe com
+              <span class="etiqueta etiqueta-feito">pronto</span>.
             </p>
           </div>
 
@@ -210,23 +208,51 @@
             <li>Nada mais: o SQLite já vem dentro do Node, e nenhuma API pede chave.</li>
           </ul>
 
-          <h3>Passo a passo</h3>
+          <h3>Com dois cliques (o jeito normal)</h3>
           <ol class="passos">
             <li>
-              Instale as dependências na pasta do projeto:
-              <pre><code>npm install</code></pre>
+              Dê dois cliques em <code>iniciar.bat</code>, na pasta do projeto. Na primeira vez ele
+              instala as dependências e prepara o app (alguns minutos, com internet).
             </li>
             <li>
-              (Opcional) Copie <code>.env.example</code> para <code>.env</code> para mudar a porta
-              ou o arquivo do banco. Sem isso, valem os padrões.
+              Ele sobe o servidor e abre
+              <a href="http://localhost:3000">http://localhost:3000</a> no navegador.
             </li>
             <li>
-              Gere a versão final e inicie o servidor:
-              <pre><code>npm run build
-npm start</code></pre>
+              Uma janela preta fica aberta enquanto o dashboard roda:
+              <strong>feche-a para encerrar</strong> (o banco é fechado direito).
             </li>
-            <li>Abra <a href="http://localhost:3000">http://localhost:3000</a> no navegador.</li>
           </ol>
+          <ul>
+            <li>
+              Só instala de novo quando o <code>package-lock.json</code> muda, e só recompila quando
+              o código muda.
+            </li>
+            <li>
+              Com o dashboard já aberto, os dois cliques só abrem o navegador (e avisam se há uma
+              versão nova do código para usar ao reabrir). Dois cliques seguidos não abrem duas
+              cópias: a segunda janela espera a primeira.
+            </li>
+            <li>
+              Porta ocupada por outro programa, Node antigo ou falha na preparação: a janela explica
+              o problema e espera uma tecla. Se a preparação de uma versão nova falhar e houver uma
+              anterior pronta, abre a anterior.
+            </li>
+            <li>
+              Para um atalho na área de trabalho: botão direito em <code>iniciar.bat</code> → Enviar
+              para → Área de trabalho (criar atalho).
+            </li>
+          </ul>
+          <p>
+            O <code>iniciar.bat</code> só chama <code>scripts/iniciar.mjs</code>; as decisões ficam
+            em <code>scripts/regras-iniciar.mjs</code>, com testes. O guia de uso resumido está no
+            <code>README.md</code>.
+          </p>
+
+          <h3>Pelo terminal</h3>
+          <pre><code>npm ci
+npm run build
+npm start</code></pre>
 
           <h3>Comandos</h3>
           <div class="tabela">
@@ -285,6 +311,11 @@ npm start</code></pre>
                   <td><code>dados.db</code></td>
                   <td>Arquivo do banco (caminho absoluto ou relativo à pasta do projeto).</td>
                 </tr>
+                <tr>
+                  <td><code>SEM_NAVEGADOR</code></td>
+                  <td>vazio</td>
+                  <td><code>1</code> faz o <code>iniciar.bat</code> não abrir o navegador.</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -301,8 +332,10 @@ npm start</code></pre>
           <div class="aviso aviso-atencao">
             <span aria-hidden="true">⚠</span>
             <p>
-              <strong>Porta ocupada?</strong> Se aparecer “A porta 3000 já está em uso. O dashboard
-              já está aberto?”, o app provavelmente já está rodando em outra janela.
+              <strong>Porta ocupada?</strong> O <code>iniciar.bat</code> reconhece o dashboard já
+              aberto e só abre o navegador. Se for outro programa, ele avisa: feche-o ou mude
+              <code>PORT</code> no <code>.env</code> (as variáveis do ambiente vencem as do
+              <code>.env</code>).
             </p>
           </div>
 
@@ -313,8 +346,12 @@ npm start</code></pre>
 │   ├── banco/     conexão, migrações e repositórios SQLite
 │   ├── externo/   Yahoo, brapi, regras de acesso e estado das APIs
 │   └── testes/    respostas falsas usadas só nos testes
-└── shared/      Regras usadas pela tela e pelo servidor
-docs/            Esta documentação</code></pre>
+├── shared/      Regras usadas pela tela e pelo servidor
+└── ponta-a-ponta/  Teste do fluxo completo (tela + servidor + banco)
+scripts/         O iniciador chamado pelo iniciar.bat e suas regras
+docs/            Esta documentação
+iniciar.bat      Abre o dashboard com dois cliques
+README.md        Guia de uso resumido</code></pre>
 
           <nav class="navegacao" aria-label="Navegação entre capítulos">
             <a href="#inicio"><small>Anterior</small>← Visão geral</a>
@@ -1554,8 +1591,8 @@ docs/            Esta documentação</code></pre>
           <div class="cartoes">
             <div class="cartao">
               <span class="icone" aria-hidden="true">✓</span>
-              <h4>690 testes</h4>
-              <p>Regras, banco, rotas, APIs externas e tela.</p>
+              <h4>936 testes</h4>
+              <p>Regras, banco, rotas, APIs externas, tela, iniciador e o fluxo completo.</p>
             </div>
             <div class="cartao">
               <span class="icone" aria-hidden="true">⛨</span>
@@ -1573,6 +1610,15 @@ docs/            Esta documentação</code></pre>
               <p>Cada etapa é testada contra as APIs reais numa porta e banco temporários.</p>
             </div>
           </div>
+
+          <h3>Teste ponta a ponta</h3>
+          <p>
+            <code>src/ponta-a-ponta/fluxo.test.tsx</code> liga o servidor Express de verdade, com
+            banco SQLite num arquivo temporário, e o app React inteiro conversa com ele por HTTP. Só
+            Yahoo e brapi são simulados. O roteiro: escolher ações, registrar, editar e excluir
+            compras conferindo as setas, fechar e reabrir com o mesmo arquivo (tudo continua lá) e a
+            internet cair (o último preço fica e o rodapé avisa).
+          </p>
 
           <h3>Ferramentas</h3>
           <p>
@@ -1592,22 +1638,10 @@ docs/            Esta documentação</code></pre>
           <h2 class="titulo">Próximas etapas e pendências</h2>
 
           <h3>Próximas etapas</h3>
-          <div class="tabela">
-            <table>
-              <thead>
-                <tr>
-                  <th>Etapa</th>
-                  <th>Entrega</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>10</td>
-                  <td><code>iniciar.bat</code>, guia de uso e teste ponta a ponta.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <p>
+            Todas as etapas planejadas (1 a 10) estão prontas. Ideias para depois, fora do plano
+            atual: histórico de preços (hoje só o último preço é guardado).
+          </p>
 
           <h3>Pontos em aberto</h3>
           <ul>
@@ -1714,7 +1748,7 @@ docs/            Esta documentação</code></pre>
         </section>
 
         <footer class="rodape">
-          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 9.</p>
+          <p>Documentação do Dashboard B3 · atualizada em 28/10/2026, após a etapa 10.</p>
         </footer>
       </main>
     </div>
