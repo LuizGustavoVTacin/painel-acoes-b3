@@ -37,6 +37,8 @@ function ganhoOuPerda(precoCentavos: number | null, posicao?: Posicao): Variacao
   }
 }
 
+const ORIENTACAO_ERRO = 'Confira as compras desta ação em Menu → Registrar compras';
+
 const quantasAcoes = (quantidade: number) =>
   `${quantidade.toLocaleString('pt-BR')} ${quantidade === 1 ? 'ação' : 'ações'}`;
 
@@ -114,12 +116,11 @@ export function QuadradoAcao({
           <span className="apenas-leitor">{`, ${resumoDaPosicao(posicao)}`}</span>
         </>
       )}
-      {comprasComErro && (
-        <span
-          className="ganho-perda variacao-neutra"
-          title="Confira as compras desta ação em Menu → Registrar compras"
-        >
-          compras com erro
+      {/* Comprada, mas sem como calcular: não pode parecer uma ação sem compras. */}
+      {(comprasComErro || (posicao && precoCentavos !== null && !variacao)) && (
+        <span className="ganho-perda variacao-neutra" title={ORIENTACAO_ERRO}>
+          erro nas compras
+          <span className="apenas-leitor">{`. ${ORIENTACAO_ERRO}`}</span>
         </span>
       )}
       {desatualizada && <span className="selo-desatualizado">desatualizado</span>}

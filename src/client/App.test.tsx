@@ -525,8 +525,9 @@ describe('App', () => {
       render(<App />);
       await avancar();
 
-      expect(quadrado('PETR4')).toHaveTextContent('compras com erro');
-      expect(quadrado('BBAS3')).not.toHaveTextContent('compras com erro');
+      expect(quadrado('PETR4')).toHaveTextContent('erro nas compras');
+      expect(quadrado('PETR4')).toHaveTextContent('Confira as compras desta ação');
+      expect(quadrado('BBAS3')).not.toHaveTextContent('erro nas compras');
     });
 
     it('com falha, tenta de novo a cada minuto mesmo sem novas cotações; o aviso não pisca', async () => {

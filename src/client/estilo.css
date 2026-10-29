@@ -469,6 +469,7 @@ button {
 .ganho-perda {
   font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .escolha-contador {
