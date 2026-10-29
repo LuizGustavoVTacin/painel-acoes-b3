@@ -155,13 +155,13 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   aspect-ratio: 1;
   /* Sem isso o conteúdo pode esticar a linha e o quadrado deixa de ser quadrado. */
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  padding: 12px;
+  padding: 10px;
   border: 1px solid var(--borda);
   border-radius: 12px;
   background: var(--superficie);
@@ -170,8 +170,8 @@ body {
 
 .logo {
   flex: none;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   object-fit: contain;
 }
@@ -433,18 +433,12 @@ button {
   font-size: 13px;
 }
 
-/* Texto só para leitores de tela. */
-.so-leitor {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 .escolha-variacao {
   font-size: 13px;
+}
+
+/* Variação com seta: ganho em verde, perda em vermelho, zero em cinza. */
+.variacao {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -455,6 +449,15 @@ button {
 
 .variacao-baixa {
   color: var(--baixa);
+}
+
+.variacao-neutra {
+  color: var(--texto-suave);
+}
+
+.ganho-perda {
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .escolha-contador {

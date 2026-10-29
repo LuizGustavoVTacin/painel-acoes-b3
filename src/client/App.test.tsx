@@ -9,6 +9,25 @@ import { cotacao, fonte, resposta } from './testes/respostas';
 
 type Resposta = RespostaCotacoes | Response | Error;
 
+/** Posições que GET /api/posicoes devolve nos testes (o padrão: nenhuma compra). */
+let posicoesFalsas: () => Response | Promise<Response> = () =>
+  Response.json({ posicoes: {}, erros: {} });
+let pedidosDePosicoes = 0;
+
+/**
+ * Instala o fetch falso: /api/posicoes é respondido à parte, para os testes de cotação
+ * contarem só as próprias chamadas.
+ */
+function instalarFetch(fetchFalso: (endereco: string, opcoes?: RequestInit) => Promise<Response>) {
+  vi.stubGlobal('fetch', (endereco: string, opcoes?: RequestInit) => {
+    if (endereco === '/api/posicoes') {
+      pedidosDePosicoes++;
+      return Promise.resolve(posicoesFalsas());
+    }
+    return fetchFalso(endereco, opcoes);
+  });
+}
+
 /** Simula o servidor: cada chamada consome a próxima resposta; a última se repete. */
 function simularServidor(...respostas: Resposta[]) {
   const fetchFalso = vi.fn(async () => {
@@ -17,7 +36,7 @@ function simularServidor(...respostas: Resposta[]) {
     if (proxima instanceof Response) return proxima.clone();
     return Response.json(proxima);
   });
-  vi.stubGlobal('fetch', fetchFalso);
+  instalarFetch(fetchFalso);
   return fetchFalso;
 }
 
@@ -40,6 +59,8 @@ describe('App', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    posicoesFalsas = () => Response.json({ posicoes: {}, erros: {} });
+    pedidosDePosicoes = 0;
   });
 
   it('mostra o carregamento e depois a grade com logo, código e preço', async () => {
@@ -316,7 +337,7 @@ describe('App', () => {
           responder = resolver;
         }),
     );
-    vi.stubGlobal('fetch', fetchFalso);
+    instalarFetch(fetchFalso);
     render(<App />);
     vi.setSystemTime(Date.now() + INTERVALO_ATUALIZACAO_MS * 2);
     document.dispatchEvent(new Event('visibilitychange'));
@@ -377,6 +398,123 @@ describe('App', () => {
     expect(quadrados()).toHaveLength(2);
   });
 
+  describe('setas de ganho e perda', () => {
+    const pos = (quantidadeTotal: number, custoTotal: number) => ({
+      quantidadeTotal,
+      custoTotal,
+      precoMedio: Math.round(custoTotal / quantidadeTotal),
+    });
+    const usarPosicoes = (posicoes: Record<string, ReturnType<typeof pos>>) => {
+      posicoesFalsas = () => Response.json({ posicoes, erros: {} });
+    };
+    const quadrado = (ticker: string) => quadrados().find((q) => q.dataset.ticker === ticker)!;
+
+    it('acima do preço médio: seta verde com o ganho; abaixo: seta vermelha com a perda', async () => {
+      usarPosicoes({ BBAS3: pos(100, 150000), PETR4: pos(10, 60000) });
+      simularServidor(resposta());
+      render(<App />);
+      await avancar();
+
+      // 17,38 × 100 contra R$ 1.500,00: +15,87%. 52,79 × 10 contra R$ 600,00: -12,02%.
+      const ganho = quadrado('BBAS3').querySelector('.ganho-perda')!;
+      expect(ganho).toHaveTextContent('▲ +15,87%');
+      expect(ganho).toHaveClass('variacao-alta');
+      expect(ganho).toHaveAttribute('title', 'Preço médio R$ 15,00 · 100 ações');
+      const perda = quadrado('PETR4').querySelector('.ganho-perda')!;
+      expect(perda).toHaveTextContent('▼ -12,02%');
+      expect(perda).toHaveClass('variacao-baixa');
+    });
+
+    it('sem compra registrada: só o preço, sem seta', async () => {
+      usarPosicoes({ BBAS3: pos(100, 150000) });
+      simularServidor(resposta());
+      render(<App />);
+      await avancar();
+
+      expect(quadrado('PETR4')).toHaveTextContent('R$ 52,79');
+      expect(quadrado('PETR4')).not.toHaveTextContent('%');
+    });
+
+    it('preço igual ao médio: 0,00% em cinza, sem seta', async () => {
+      usarPosicoes({ BBAS3: pos(2, 3476) });
+      simularServidor(resposta());
+      render(<App />);
+      await avancar();
+
+      const indicador = quadrado('BBAS3').querySelector('.ganho-perda')!;
+      expect(indicador).toHaveTextContent(/^sobre o preço médio: 0,00%$/);
+      expect(indicador).toHaveClass('variacao-neutra');
+    });
+
+    it('sem cotação não tem seta; preço desatualizado mantém a seta com o último preço', async () => {
+      usarPosicoes({ ELET3: pos(10, 40000), BBAS3: pos(100, 150000) });
+      simularServidor(
+        resposta({
+          cotacoes: [cotacao('ELET3', null), cotacao('BBAS3', 1738, { desatualizada: true })],
+        }),
+      );
+      render(<App />);
+      await avancar();
+
+      expect(quadrado('ELET3')).not.toHaveTextContent('%');
+      expect(quadrado('BBAS3')).toHaveTextContent('desatualizado');
+      expect(quadrado('BBAS3')).toHaveTextContent('▲ +15,87%');
+    });
+
+    it('o leitor de tela ouve a que a porcentagem se refere', async () => {
+      usarPosicoes({ BBAS3: pos(100, 150000) });
+      simularServidor(resposta());
+      render(<App />);
+      await avancar();
+
+      expect(quadrado('BBAS3')).toHaveTextContent('sobre o preço médio: ▲ +15,87%');
+      const seta = quadrado('BBAS3').querySelector('.ganho-perda [aria-hidden="true"]');
+      expect(seta).toHaveTextContent('▲');
+    });
+
+    it('falha ao ler as compras: a grade continua, avisa e se recupera na próxima rodada', async () => {
+      posicoesFalsas = () => new Response('erro', { status: 500 });
+      simularServidor(resposta());
+      render(<App />);
+      await avancar();
+
+      expect(quadrados()).toHaveLength(2);
+      expect(screen.getByText(/Não foi possível ler suas compras/)).toHaveTextContent(
+        'as setas de ganho e perda não aparecem',
+      );
+
+      usarPosicoes({ BBAS3: pos(100, 150000) });
+      await avancar(INTERVALO_ATUALIZACAO_MS);
+
+      expect(screen.queryByText(/Não foi possível ler suas compras/)).not.toBeInTheDocument();
+      expect(quadrado('BBAS3')).toHaveTextContent('+15,87%');
+    });
+
+    it('falha numa releitura mantém as setas e avisa que podem estar desatualizadas', async () => {
+      usarPosicoes({ BBAS3: pos(100, 150000) });
+      simularServidor(resposta());
+      render(<App />);
+      await avancar();
+
+      posicoesFalsas = () => new Response('erro', { status: 500 });
+      await avancar(INTERVALO_ATUALIZACAO_MS);
+
+      expect(quadrado('BBAS3')).toHaveTextContent('+15,87%');
+      expect(screen.getByText(/podem estar desatualizadas/)).toBeInTheDocument();
+    });
+
+    it('as posições são lidas na abertura e de novo a cada rodada de cotações', async () => {
+      simularServidor(resposta());
+      render(<App />);
+      await avancar();
+      expect(pedidosDePosicoes).toBe(1);
+
+      await avancar(INTERVALO_ATUALIZACAO_MS);
+
+      expect(pedidosDePosicoes).toBe(2);
+    });
+  });
+
   describe('menu de escolha das ações', () => {
     /** Servidor com seleção de verdade: as cotações seguem o que foi salvo pelo menu. */
     function simularServidorComSelecao(inicial: string[]) {
@@ -408,7 +546,7 @@ describe('App', () => {
         }
         return responderCotacoes();
       });
-      vi.stubGlobal('fetch', fetchFalso);
+      instalarFetch(fetchFalso);
       const chamadasCotacoes = () =>
         fetchFalso.mock.calls.filter(([endereco]) => endereco === '/api/cotacoes').length;
       return {

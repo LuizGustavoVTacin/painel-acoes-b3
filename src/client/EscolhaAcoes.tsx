@@ -20,7 +20,7 @@ import {
 import { FiltrosDaLista } from './FiltrosDaLista';
 import { Painel } from './Painel';
 import { comTempoLimite, ErroTempoEsgotado, TEMPO_LIMITE_PAINEL_MS, useCarga } from './useCarga';
-import { VariacaoDoDia } from './VariacaoDoDia';
+import { IndicadorVariacao } from './IndicadorVariacao';
 
 interface PropsEscolha {
   aoFechar: () => void;
@@ -210,7 +210,11 @@ export function EscolhaAcoes({
                 {variacaoDoDia !== null && (
                   <>
                     {' '}
-                    <VariacaoDoDia centesimos={variacaoDoDia} />
+                    <IndicadorVariacao
+                      centesimos={variacaoDoDia}
+                      descricao="variação do dia"
+                      className="escolha-variacao"
+                    />
                   </>
                 )}
               </label>

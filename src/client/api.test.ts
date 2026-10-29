@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   atualizarTransacao,
   buscarCatalogo,
+  buscarPosicoes,
   criarTransacao,
   excluirTransacao,
   lerListaTransacoes,
@@ -10,6 +11,7 @@ import {
   buscarSelecao,
   ErroApi,
   lerCatalogo,
+  lerPosicoes,
   lerRespostaCotacoes,
   lerSelecao,
   salvarSelecao,
@@ -208,6 +210,49 @@ describe('lerCatalogo', () => {
       ],
     };
     expect(lerCatalogo(corpo).acoes.map((a) => a.ticker)).toEqual(['PETR4']);
+  });
+});
+
+describe('lerPosicoes', () => {
+  const pos = (quantidadeTotal: number, custoTotal: number, precoMedio: number) => ({
+    quantidadeTotal,
+    custoTotal,
+    precoMedio,
+  });
+
+  it('lê as posições por ação', () => {
+    expect(
+      lerPosicoes({ posicoes: { BBAS3: pos(150, 165150, 1101) }, erros: { PETR4: 'falhou' } }),
+    ).toEqual(new Map([['BBAS3', pos(150, 165150, 1101)]]));
+  });
+
+  it.each([
+    ['nulo', null],
+    ['sem posições', { erros: {} }],
+    ['posições em lista', { posicoes: [] }],
+  ])('recusa estrutura errada: %s', (_caso, corpo) => {
+    expect(() => lerPosicoes(corpo)).toThrow(ErroApi);
+  });
+
+  it('descarta só a posição inválida', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const corpo = {
+      posicoes: {
+        bbas3: pos(1, 100, 100),
+        VALE3: pos(0, 100, 100),
+        ITUB4: pos(1, 10.5, 10),
+        PETR4: pos(10, 38000, 3800),
+      },
+    };
+    expect([...lerPosicoes(corpo).keys()]).toEqual(['PETR4']);
+  });
+
+  it('buscarPosicoes consulta /api/posicoes', async () => {
+    const fetchFalso = vi.fn(async () => Response.json({ posicoes: {}, erros: {} }));
+    vi.stubGlobal('fetch', fetchFalso);
+
+    await expect(buscarPosicoes(new AbortController().signal)).resolves.toEqual(new Map());
+    expect(fetchFalso).toHaveBeenCalledWith('/api/posicoes', expect.anything());
   });
 });
 

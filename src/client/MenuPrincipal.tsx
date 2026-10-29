@@ -5,10 +5,12 @@ import { RegistroCompras } from './RegistroCompras';
 interface PropsMenu {
   /** Chamado depois que a seleção de ações da grade mudou (ou pode ter mudado). */
   aoSalvarSelecao: () => void;
+  /** Uma compra foi registrada, alterada ou excluída (ou pode ter sido). */
+  aoMudarCompras?: () => void;
 }
 
 /** Menu do canto superior direito: escolher as ações da grade e registrar compras. */
-export function MenuPrincipal({ aoSalvarSelecao }: PropsMenu) {
+export function MenuPrincipal({ aoSalvarSelecao, aoMudarCompras = () => {} }: PropsMenu) {
   const [aberto, setAberto] = useState(false);
   /** Painel aberto pelo menu, se houver. */
   const [painel, setPainel] = useState<'escolha' | 'compras' | null>(null);
@@ -92,7 +94,11 @@ export function MenuPrincipal({ aoSalvarSelecao }: PropsMenu) {
         />
       )}
       {painel === 'compras' && (
-        <RegistroCompras aoFechar={fecharPainel} aoMudarGrade={aoSalvarSelecao} />
+        <RegistroCompras
+          aoFechar={fecharPainel}
+          aoMudarGrade={aoSalvarSelecao}
+          aoMudarCompras={aoMudarCompras}
+        />
       )}
     </div>
   );

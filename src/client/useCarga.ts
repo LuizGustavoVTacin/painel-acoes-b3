@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type Carga<T> =
   | { situacao: 'carregando' }
@@ -84,12 +84,13 @@ export function useCarga<T>(
     };
   }, [buscar, pedido, tempoLimiteMs]);
 
-  function recarregar(): void {
+  // Estável entre renderizações: pode ir na lista de dependências de um efeito.
+  const recarregar = useCallback((): void => {
     ultimoPedido.current += 1;
     // Depois de uma falha não há dados para manter: a tela volta a mostrar "carregando".
     setCarga((atual) => (atual.situacao === 'erro' ? { situacao: 'carregando' } : atual));
     setPedido((n) => n + 1);
-  }
+  }, []);
 
   function tentarDeNovo(): void {
     if (carga.situacao === 'erro' || (carga.situacao === 'ok' && carga.desatualizada)) {

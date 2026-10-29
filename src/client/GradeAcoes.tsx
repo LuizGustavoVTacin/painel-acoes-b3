@@ -9,6 +9,7 @@ import {
   type SyntheticEvent,
 } from 'react';
 import type { Cotacao } from '../shared/painel';
+import type { Posicao } from '../shared/posicao';
 import type { Ticker } from '../shared/ticker';
 import { QuadradoAcao, type Destaque } from './QuadradoAcao';
 import { useColunas, usePodePassarPorCima } from './useLayoutGrade';
@@ -24,6 +25,8 @@ interface Ativo {
 interface PropsGrade {
   cotacoes: readonly Cotacao[];
   rodada: number;
+  /** Posição de cada ação comprada (para a seta de ganho ou perda). */
+  posicoes?: ReadonlyMap<Ticker, Posicao>;
 }
 
 /** Ticker do quadrado onde o evento aconteceu (o evento é tratado na grade, por delegação). */
@@ -36,7 +39,7 @@ function tickerDoEvento(evento: SyntheticEvent): Ticker | null {
  * Grade de ações com destaque: o quadrado ativo fica forte e os 4 vizinhos, suaves.
  * Mouse (só onde há hover), toque (liga/desliga) e teclado (setas) movem o destaque.
  */
-export function GradeAcoes({ cotacoes, rodada }: PropsGrade) {
+export function GradeAcoes({ cotacoes, rodada, posicoes }: PropsGrade) {
   const grade = useRef<HTMLUListElement>(null);
   const idDica = useId();
   const colunas = useColunas(grade);
@@ -207,6 +210,7 @@ export function GradeAcoes({ cotacoes, rodada }: PropsGrade) {
             rodada={rodada}
             destaque={destaqueDe(indice)}
             focavel={cotacao.ticker === tickerFocavel}
+            posicao={posicoes?.get(cotacao.ticker)}
           />
         ))}
       </ul>

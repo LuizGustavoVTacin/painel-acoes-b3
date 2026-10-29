@@ -418,6 +418,37 @@ describe('RegistroCompras', () => {
     expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement);
   });
 
+  it('avisa a grade quando as compras mudam: registrar, editar e excluir', async () => {
+    simularServidor({ compras: [compra(1), compra(2, { ticker: 'VALE3' })] });
+    const aoMudarCompras = vi.fn();
+    await abrirPainel({ aoMudarCompras });
+    expect(aoMudarCompras).not.toHaveBeenCalled();
+
+    preencher(compraBBAS3);
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar compra' }));
+    await waitFor(() => expect(aoMudarCompras).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: /Editar a compra de VALE3/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar alterações' }));
+    await waitFor(() => expect(aoMudarCompras).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole('button', { name: /Excluir a compra de VALE3/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sim, excluir' }));
+    await waitFor(() => expect(aoMudarCompras).toHaveBeenCalledTimes(3));
+  });
+
+  it('uma gravação recusada não avisa a grade', async () => {
+    simularServidor();
+    const aoMudarCompras = vi.fn();
+    await abrirPainel({ aoMudarCompras });
+
+    preencher({ ...compraBBAS3, Quantidade: '0' });
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar compra' }));
+
+    expect(await screen.findByText(/A quantidade deve ser/)).toBeInTheDocument();
+    expect(aoMudarCompras).not.toHaveBeenCalled();
+  });
+
   it('Esc na pergunta de exclusão desiste só dela; o foco fica no painel', async () => {
     const aoFechar = vi.fn();
     simularServidor();

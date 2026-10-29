@@ -30,6 +30,8 @@ interface PropsRegistro {
   aoFechar: () => void;
   /** Uma ação foi acrescentada à grade (ou pode ter sido): as cotações devem ser buscadas. */
   aoMudarGrade: () => void;
+  /** Uma compra foi registrada, alterada ou excluída (ou pode ter sido): as setas mudam. */
+  aoMudarCompras?: () => void;
   tempoLimiteMs?: number;
 }
 
@@ -44,9 +46,15 @@ function erroDeEspera(oQue: string): ErroApi {
 export function RegistroCompras({
   aoFechar,
   aoMudarGrade,
+  aoMudarCompras = () => {},
   tempoLimiteMs = TEMPO_LIMITE_PAINEL_MS,
 }: PropsRegistro) {
-  const [carga, tentarDeNovo, recarregar] = useCarga(listarTransacoes, tempoLimiteMs);
+  const [carga, tentarDeNovo, recarregarLista] = useCarga(listarTransacoes, tempoLimiteMs);
+  /** As compras mudaram (ou podem ter mudado): a lista e as setas da grade são relidas. */
+  function recarregar(): void {
+    recarregarLista();
+    aoMudarCompras();
+  }
   const [catalogo] = useCarga(buscarCatalogo, tempoLimiteMs);
   const [selecaoCarregada] = useCarga(buscarSelecao, tempoLimiteMs);
   const [selecaoAtual, setSelecaoAtual] = useState<Ticker[] | null>(null);

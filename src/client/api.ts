@@ -6,6 +6,7 @@ import type {
   RespostaCotacoes,
   SituacaoFonte,
 } from '../shared/painel';
+import type { Posicao } from '../shared/posicao';
 import type { AcaoListada } from '../shared/selecao';
 import { ehDataISO, ehInstanteISO } from '../shared/datas';
 import { normalizarTicker, type Ticker } from '../shared/ticker';
@@ -315,6 +316,45 @@ export function lerTransacaoSalva(corpo: unknown): Transacao {
   const transacao = ehObjeto(corpo) ? lerTransacao(corpo.transacao) : null;
   if (!transacao) throw formatoInvalido();
   return transacao;
+}
+
+const ehPositivo = (valor: unknown): valor is number =>
+  Number.isSafeInteger(valor) && (valor as number) > 0;
+
+function lerPosicao(valor: unknown): Posicao | null {
+  if (
+    !ehObjeto(valor) ||
+    !ehPositivo(valor.quantidadeTotal) ||
+    !ehPositivo(valor.custoTotal) ||
+    !ehPositivo(valor.precoMedio)
+  ) {
+    return null;
+  }
+  return {
+    quantidadeTotal: valor.quantidadeTotal,
+    custoTotal: valor.custoTotal,
+    precoMedio: valor.precoMedio,
+  };
+}
+
+/**
+ * Confere o corpo de GET /api/posicoes. Uma posição inválida é descartada sozinha (a ação
+ * aparece sem seta); as que o servidor não conseguiu calcular nem vêm na lista.
+ */
+export function lerPosicoes(corpo: unknown): Map<Ticker, Posicao> {
+  if (!ehObjeto(corpo) || !ehObjeto(corpo.posicoes)) throw formatoInvalido();
+  const posicoes = new Map<Ticker, Posicao>();
+  for (const [ticker, valor] of Object.entries(corpo.posicoes)) {
+    const posicao = ehTicker(ticker) ? lerPosicao(valor) : null;
+    if (posicao) posicoes.set(ticker, posicao);
+    else descartar('posições', { ticker, valor });
+  }
+  return posicoes;
+}
+
+/** Quantidade, custo total e preço médio de cada ação comprada. */
+export async function buscarPosicoes(signal: AbortSignal): Promise<Map<Ticker, Posicao>> {
+  return lerPosicoes(await pedirJson('/api/posicoes', { signal }));
 }
 
 /** Todas as compras registradas, mais recentes primeiro. */

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { formatarBRL } from '../shared/dinheiro';
 import type { Cotacao } from '../shared/painel';
+import { calcularVariacao, type Posicao, type Variacao } from '../shared/posicao';
+import { IndicadorVariacao } from './IndicadorVariacao';
 
 /** Destaque forte no quadrado ativo e suave nos 4 vizinhos. */
 export type Destaque = 'ativo' | 'vizinho' | null;
@@ -12,11 +14,34 @@ interface PropsQuadrado {
   destaque?: Destaque;
   /** O quadrado que recebe o Tab ao entrar na grade. */
   focavel?: boolean;
+  /** Compras desta ação; sem compras, o quadrado mostra só o preço. */
+  posicao?: Posicao;
 }
 
-/** Um quadrado da grade: logo, código e preço atual. */
-export function QuadradoAcao({ cotacao, rodada, destaque = null, focavel = false }: PropsQuadrado) {
+/** Ganho ou perda do preço atual sobre o preço médio; null se não há como calcular. */
+function ganhoOuPerda(precoCentavos: number | null, posicao?: Posicao): Variacao | null {
+  if (precoCentavos === null || !posicao) return null;
+  try {
+    return calcularVariacao(precoCentavos, posicao);
+  } catch (erro) {
+    console.error('Não foi possível calcular o ganho ou a perda:', erro);
+    return null;
+  }
+}
+
+const quantasAcoes = (quantidade: number) =>
+  `${quantidade.toLocaleString('pt-BR')} ${quantidade === 1 ? 'ação' : 'ações'}`;
+
+/** Um quadrado da grade: logo, código, preço atual e, se houve compra, o ganho ou a perda. */
+export function QuadradoAcao({
+  cotacao,
+  rodada,
+  destaque = null,
+  focavel = false,
+  posicao,
+}: PropsQuadrado) {
   const { ticker, precoCentavos, desatualizada } = cotacao;
+  const variacao = ganhoOuPerda(precoCentavos, posicao);
   const [semLogo, setSemLogo] = useState(false);
   const endereco = `/api/logos/${ticker}`;
 
@@ -64,6 +89,15 @@ export function QuadradoAcao({ cotacao, rodada, destaque = null, focavel = false
       <span className="preco">
         {precoCentavos === null ? 'sem cotação' : formatarBRL(precoCentavos)}
       </span>
+      {variacao && posicao && (
+        <IndicadorVariacao
+          centesimos={variacao.centesimosDePercentual}
+          direcao={variacao.direcao}
+          descricao="sobre o preço médio:"
+          className="ganho-perda"
+          title={`Preço médio ${formatarBRL(posicao.precoMedio)} · ${quantasAcoes(posicao.quantidadeTotal)}`}
+        />
+      )}
       {desatualizada && <span className="selo-desatualizado">desatualizado</span>}
     </li>
   );

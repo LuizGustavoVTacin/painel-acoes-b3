@@ -1,8 +1,11 @@
+import { useEffect } from 'react';
 import { formatarHorario } from '../shared/datas';
+import { buscarPosicoes } from './api';
 import { textoMercado, ultimaAtualizacao } from './apresentacao';
 import { GradeAcoes } from './GradeAcoes';
 import { MenuPrincipal } from './MenuPrincipal';
 import { Rodape } from './Rodape';
+import { TEMPO_LIMITE_PAINEL_MS, useCarga } from './useCarga';
 import { useCotacoes } from './useCotacoes';
 
 interface PropsApp {
@@ -12,7 +15,15 @@ interface PropsApp {
 
 export function App({ tempoLimiteMs }: PropsApp) {
   const { dados, erro, carregando, recebimentos, recarregar } = useCotacoes(tempoLimiteMs);
+  const [posicoes, , recarregarPosicoes] = useCarga(buscarPosicoes, TEMPO_LIMITE_PAINEL_MS);
   const atualizadoEm = dados && ultimaAtualizacao(dados.cotacoes);
+  // A cada nova rodada de cotações as posições também são relidas (é só o banco local): assim
+  // uma falha se recupera sozinha e compras feitas em outra aba aparecem.
+  useEffect(() => {
+    if (recebimentos > 1) recarregarPosicoes();
+  }, [recebimentos, recarregarPosicoes]);
+  const semPosicoes =
+    posicoes.situacao === 'erro' || (posicoes.situacao === 'ok' && posicoes.desatualizada);
 
   let conteudo = null;
   if (dados && dados.cotacoes.length === 0) {
@@ -22,7 +33,13 @@ export function App({ tempoLimiteMs }: PropsApp) {
       </p>
     );
   } else if (dados) {
-    conteudo = <GradeAcoes cotacoes={dados.cotacoes} rodada={recebimentos} />;
+    conteudo = (
+      <GradeAcoes
+        cotacoes={dados.cotacoes}
+        rodada={recebimentos}
+        posicoes={posicoes.situacao === 'ok' ? posicoes.dados : undefined}
+      />
+    );
   } else if (carregando) {
     conteudo = <p role="status">Carregando cotações…</p>;
   }
@@ -37,11 +54,20 @@ export function App({ tempoLimiteMs }: PropsApp) {
             {atualizadoEm && <span>Atualizado em {formatarHorario(atualizadoEm)}</span>}
           </p>
         )}
-        <MenuPrincipal aoSalvarSelecao={recarregar} />
+        <MenuPrincipal aoSalvarSelecao={recarregar} aoMudarCompras={recarregarPosicoes} />
       </header>
       {erro && (
         <p role="alert" className="erro">
           {erro}.{dados ? ' Mostrando os últimos dados recebidos.' : ' Nova tentativa em 1 minuto.'}
+        </p>
+      )}
+      {semPosicoes && (
+        <p role="status" className="aviso-compras">
+          Não foi possível ler suas compras;{' '}
+          {posicoes.situacao === 'ok'
+            ? 'as setas de ganho e perda podem estar desatualizadas.'
+            : 'as setas de ganho e perda não aparecem.'}{' '}
+          Nova tentativa na próxima atualização.
         </p>
       )}
       <main className="principal">{conteudo}</main>
