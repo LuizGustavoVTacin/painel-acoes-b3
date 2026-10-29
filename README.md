@@ -29,7 +29,8 @@ Dê dois cliques em **`iniciar.bat`**, na pasta do projeto.
 
 Nas próximas vezes abre em poucos segundos. Ele só prepara o app de novo quando o código muda.
 Se o dashboard já estiver aberto, os dois cliques só abrem o navegador de novo. Se o código
-tiver mudado nesse meio-tempo, ele avisa para fechar a janela e abrir de novo. Dois cliques
+tiver mudado nesse meio-tempo, ele avisa (e espera uma tecla) para fechar a janela e abrir de
+novo. Dois cliques
 seguidos não abrem duas cópias: a segunda janela espera a primeira e só abre o navegador.
 
 Para encerrar, feche a janela. Com Ctrl+C, o Windows pergunta "Deseja finalizar o arquivo em
@@ -72,16 +73,17 @@ preço médio = (soma de quantidade × preço unitário + soma das taxas) ÷ qua
 
 ## Problemas comuns
 
-| O que aparece                                                                                | O que fazer                                                                                                        |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| "O Node.js não foi encontrado" ou "precisa do Node.js 24"                                    | Instale o Node.js 24 ou mais novo em <https://nodejs.org> e abra de novo.                                          |
-| "A porta 3000 está ocupada por outro programa"                                               | Feche o outro programa, ou copie `.env.example` para `.env` e mude `PORT` (ex.: `PORT=3005`).                      |
-| Preço com o selo "desatualizado"                                                             | A fonte de cotação não respondeu. O último preço conhecido continua na tela e o app tenta de novo sozinho.         |
-| Rodapé diz que uma fonte "passou a exigir pagamento ou chave" ou "mudou o formato dos dados" | O app para de chamá-la por 24 h e segue com os dados salvos. Nenhuma chave ou pagamento é usado.                   |
-| Rodapé diz "Yahoo Finance: indisponível no momento"                                          | A fonte não respondeu. O app usa a reserva (brapi) ou os últimos dados salvos e tenta de novo sozinho.             |
-| "Não foi possível ler suas compras"                                                          | A grade continua com os preços. Clique em **Tentar de novo** ou espere a nova tentativa automática, a cada minuto. |
-| "Algo na porta 3000 não responde"                                                            | Outro programa travado ocupa a porta. Feche-o ou mude `PORT` no `.env`.                                            |
-| A janela preta mostra um erro                                                                | Leia a mensagem: quando algo dá errado, o `iniciar.bat` espera uma tecla antes de fechar.                          |
+| O que aparece                                                                                | O que fazer                                                                                                                                                           |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "O Node.js não foi encontrado" ou "precisa do Node.js 24"                                    | Instale o Node.js 24 ou mais novo em <https://nodejs.org> e abra de novo.                                                                                             |
+| "A porta 3000 está ocupada por outro programa"                                               | Feche o outro programa, ou copie `.env.example` para `.env` e mude `PORT` (ex.: `PORT=3005`).                                                                         |
+| Preço com o selo "desatualizado"                                                             | A fonte de cotação não respondeu. O último preço conhecido continua na tela e o app tenta de novo sozinho.                                                            |
+| Rodapé diz que uma fonte "passou a exigir pagamento ou chave" ou "mudou o formato dos dados" | O app para de chamá-la por 24 h e segue com os dados salvos. Nenhuma chave ou pagamento é usado.                                                                      |
+| Rodapé diz "Yahoo Finance: indisponível no momento"                                          | A fonte não respondeu. O app usa a reserva (brapi) ou os últimos dados salvos e tenta de novo sozinho.                                                                |
+| "Não foi possível ler suas compras"                                                          | A grade continua com os preços. Clique em **Tentar de novo** ou espere a nova tentativa automática, a cada minuto.                                                    |
+| "Algo na porta 3000 não responde"                                                            | Outro programa travado ocupa a porta. Feche-o ou mude `PORT` no `.env`.                                                                                               |
+| A janela preta mostra um erro                                                                | Leia a mensagem: quando algo dá errado, o `iniciar.bat` espera uma tecla antes de fechar.                                                                             |
+| "O dashboard já está sendo aberto em outra janela" sem outra janela aberta                   | Espere: uma trava esquecida (janela fechada no meio da preparação) é descartada sozinha em até 15 minutos. Ou apague o arquivo `.iniciando.lock` na pasta do projeto. |
 
 ## Para quem mexe no código
 
@@ -97,7 +99,7 @@ Configuração opcional: copie `.env.example` para `.env`. As variáveis valem p
 `iniciar.bat` e para o `npm start`; uma variável definida no ambiente vence a do `.env`.
 
 - `PORT`: porta do servidor (padrão 3000).
-- `DB_ARQUIVO`: arquivo do banco (padrão `dados.db`).
+- `DB_ARQUIVO`: arquivo do banco (padrão `dados.db`). Caminho com `#` ou espaço vai entre aspas.
 - `SEM_NAVEGADOR=1`: faz o `iniciar.bat` não abrir o navegador.
 
 Estrutura: `src/client` (tela React), `src/server` (Express, banco e fontes de cotação),

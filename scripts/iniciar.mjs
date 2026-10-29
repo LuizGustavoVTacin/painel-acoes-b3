@@ -8,7 +8,15 @@
  * As decisões ficam em regras-iniciar.mjs, onde são testadas.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
@@ -20,6 +28,8 @@ import {
   lerPorta,
   precisaCompilar,
   precisaInstalar,
+  travaAbandonada,
+  variaveisDoEnv,
   versaoNodeServe,
 } from './regras-iniciar.mjs';
 
@@ -44,12 +54,19 @@ function falhar(mensagem) {
   process.exit(1);
 }
 
+/** @param {unknown} erro */
+const codigoDoErro = (erro) => /** @type {NodeJS.ErrnoException} */ (erro).code;
+
+/** Lê o .env do mesmo jeito que o servidor (dotenv), para os dois usarem a mesma porta. */
 function lerEnv() {
+  let texto;
   try {
-    process.loadEnvFile(path.join(RAIZ, '.env'));
+    texto = readFileSync(path.join(RAIZ, '.env'), 'utf8');
   } catch (erro) {
-    if (/** @type {NodeJS.ErrnoException} */ (erro).code !== 'ENOENT') throw erro;
+    if (codigoDoErro(erro) === 'ENOENT') return;
+    throw erro;
   }
+  Object.assign(process.env, variaveisDoEnv(texto, process.env));
 }
 
 function situacaoDaInstalacao() {
@@ -75,8 +92,14 @@ function datasDasFontes() {
   return /** @type {number[]} */ (datas.filter((data) => data !== null));
 }
 
+const SAIDAS_DO_BUILD = ['dist/client/index.html', 'dist/server/index.js'];
+
 const situacaoDaCompilacao = () =>
-  precisaCompilar({ compiladoEm: dataDaCompilacao(), fontesEm: datasDasFontes() });
+  precisaCompilar({
+    compiladoEm: dataDaCompilacao(),
+    saidasProntas: SAIDAS_DO_BUILD.every((arquivo) => existsSync(path.join(RAIZ, arquivo))),
+    fontesEm: datasDasFontes(),
+  });
 
 /**
  * Roda um comando do npm mostrando a saída. Devolve se deu certo.
@@ -94,11 +117,12 @@ function rodarNpm(argumentos, explicacao) {
 
 /** @param {number} porta */
 async function consultarPorta(porta) {
+  const sinal = AbortSignal.timeout(2000);
   try {
-    const resposta = await fetch(`http://127.0.0.1:${porta}/api/saude`, {
-      signal: AbortSignal.timeout(2000),
-    });
+    const resposta = await fetch(`http://127.0.0.1:${porta}/api/saude`, { signal: sinal });
     const corpo = await resposta.json().catch(() => null);
+    // O corpo pode não chegar a tempo mesmo com os cabeçalhos já recebidos.
+    if (sinal.aborted) return classificarPorta({ semResposta: true });
     return classificarPorta({ status: resposta.status, corpo });
   } catch (erro) {
     const { cause, name } = /** @type {{ cause?: { code?: string }, name?: string }} */ (erro);
@@ -119,17 +143,21 @@ async function consultarPortaComPaciencia(porta) {
 }
 
 /**
- * Espera o dashboard responder na porta, até o limite.
+ * Espera o dashboard responder na porta, até o limite. `desistir` encerra a espera antes (ex.: a
+ * outra janela fechou).
  * @param {number} porta
  * @param {number} limiteMs
+ * @param {() => boolean} [desistir]
+ * @returns {Promise<'dashboard' | 'desistiu' | 'tempo_esgotado'>}
  */
-async function esperarDashboard(porta, limiteMs) {
+async function esperarDashboard(porta, limiteMs, desistir = () => false) {
   const limite = Date.now() + limiteMs;
   while (Date.now() < limite) {
-    if ((await consultarPorta(porta)) === 'dashboard') return true;
+    if ((await consultarPorta(porta)) === 'dashboard') return 'dashboard';
+    if (desistir()) return 'desistiu';
     await esperar(250);
   }
-  return false;
+  return 'tempo_esgotado';
 }
 
 /** @param {string} endereco */
@@ -156,23 +184,43 @@ function processoVivo(pid) {
   }
 }
 
+/** A trava não existe mais ou foi abandonada pela janela que a criou. */
+function travaLivre() {
+  try {
+    const conteudo = readFileSync(TRAVA, 'utf8');
+    const idadeMs = Date.now() - statSync(TRAVA).mtimeMs;
+    return travaAbandonada({ conteudo, idadeMs, pidVivo: processoVivo });
+  } catch (erro) {
+    if (codigoDoErro(erro) === 'ENOENT') return true;
+    throw erro;
+  }
+}
+
 /**
  * Trava contra dois cliques seguidos: só uma janela instala, compila e sobe o servidor. Uma
- * trava deixada por uma janela que já fechou é ignorada.
+ * trava abandonada (janela fechada no meio) é descartada.
  * @returns {boolean}
  */
-function pegarTrava(tentativas = 2) {
-  try {
-    writeFileSync(TRAVA, String(process.pid), { flag: 'wx' });
-    process.on('exit', soltarTrava);
-    return true;
-  } catch (erro) {
-    if (/** @type {NodeJS.ErrnoException} */ (erro).code !== 'EEXIST') throw erro;
-    const dono = Number(readFileSync(TRAVA, 'utf8'));
-    if (processoVivo(dono) || tentativas <= 1) return false;
-    rmSync(TRAVA, { force: true });
-    return pegarTrava(tentativas - 1);
+function pegarTrava() {
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    try {
+      writeFileSync(TRAVA, String(process.pid), { flag: 'wx' });
+      process.on('exit', soltarTrava);
+      return true;
+    } catch (erro) {
+      if (codigoDoErro(erro) !== 'EEXIST') throw erro;
+    }
+    if (!travaLivre()) return false;
+    // Renomeia antes de apagar: se duas janelas acharem a mesma trava velha, só uma a remove.
+    const descartada = `${TRAVA}.${process.pid}`;
+    try {
+      renameSync(TRAVA, descartada);
+      rmSync(descartada, { force: true });
+    } catch (erro) {
+      if (codigoDoErro(erro) !== 'ENOENT') throw erro;
+    }
   }
+  return false;
 }
 
 function soltarTrava() {
@@ -209,6 +257,20 @@ function prepararApp() {
   }
 }
 
+/**
+ * O dashboard já está aberto: só abre o navegador. Com uma versão nova pendente, sai com código
+ * 2 para o iniciar.bat pausar e o aviso não sumir com a janela.
+ * @param {string} endereco
+ */
+function jaAberto(endereco) {
+  console.log(`O dashboard já está aberto em ${endereco}. Abrindo o navegador…`);
+  if (situacaoDaInstalacao() || situacaoDaCompilacao()) {
+    console.log('Há uma versão nova do código: feche a janela do dashboard e abra de novo.');
+    process.exitCode = 2;
+  }
+  abrirNavegador(endereco);
+}
+
 async function iniciar() {
   if (!versaoNodeServe(process.version)) {
     falhar(
@@ -225,11 +287,7 @@ async function iniciar() {
   // Antes de instalar ou compilar: com o dashboard aberto, isso apagaria arquivos em uso.
   const naPorta = await consultarPortaComPaciencia(porta);
   if (naPorta === 'dashboard') {
-    console.log(`O dashboard já está aberto em ${endereco}. Abrindo o navegador…`);
-    if (situacaoDaInstalacao() || situacaoDaCompilacao()) {
-      console.log('Há uma versão nova do código: feche a janela do dashboard e abra de novo.');
-    }
-    abrirNavegador(endereco);
+    jaAberto(endereco);
     return;
   }
   if (naPorta === 'sem_resposta') {
@@ -242,20 +300,33 @@ async function iniciar() {
     );
   }
 
-  if (!pegarTrava()) {
-    console.log('O dashboard já está sendo aberto em outra janela. Aguardando…');
-    if (!(await esperarDashboard(porta, ESPERA_OUTRA_JANELA_MS))) {
+  let avisou = false;
+  while (!pegarTrava()) {
+    if (!avisou) console.log('O dashboard já está sendo aberto em outra janela. Aguardando…');
+    avisou = true;
+    // Se a outra janela fechar ou falhar, esta tenta assumir em vez de esperar o limite.
+    const resultado = await esperarDashboard(porta, ESPERA_OUTRA_JANELA_MS, travaLivre);
+    if (resultado === 'dashboard') {
+      abrirNavegador(endereco);
+      return;
+    }
+    if (resultado === 'tempo_esgotado') {
       falhar('A outra janela não terminou de abrir o dashboard. Veja as mensagens dela.');
     }
-    abrirNavegador(endereco);
+  }
+  // A outra janela pode ter terminado entre a consulta da porta e a trava.
+  if ((await consultarPorta(porta)) === 'dashboard') {
+    soltarTrava();
+    jaAberto(endereco);
     return;
   }
 
   prepararApp();
 
   // O servidor roda neste mesmo processo: fechar a janela o encerra e fecha o banco.
+  /** @type {{ encerrar: (codigo?: number) => never }} */
   const servidor = await import(pathToFileURL(path.join(RAIZ, 'dist/server/index.js')).href);
-  if (!(await esperarDashboard(porta, ESPERA_SERVIDOR_MS))) {
+  if ((await esperarDashboard(porta, ESPERA_SERVIDOR_MS)) !== 'dashboard') {
     console.error('\nO servidor não respondeu a tempo. Veja as mensagens acima.');
     servidor.encerrar(1);
   }
